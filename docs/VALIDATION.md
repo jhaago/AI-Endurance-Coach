@@ -14,7 +14,7 @@
 
 - No Android emulator or physical device run was available here. Keystore behaviour, Android SQLite transaction failure injection, UI appearance/accessibility and JobScheduler timing require device acceptance testing.
 - No real Garmin account has been queried. The athlete must obtain a Personal API key and enter it directly into the installed app. Account/device-specific responses and service limits remain a live integration check.
-- Google OAuth is approved and the live Apps Script `verifySetup` check passed: database/schema readable, one event and one plan revision, private archive accessible, secret present and valid length without displaying it. The web app is deployed as version 1; `Anyone` endpoint access was explicitly approved and all data operations require the bridge secret. Live Android-to-bridge POST is not yet verified. Node tests use service doubles.
+- Google OAuth is approved and the live Apps Script `verifySetup` check passed: database/schema readable, one event and one plan revision, private archive accessible, secret present and valid length without displaying it. The web app is deployed as version 1; `Anyone` endpoint access was explicitly approved and all data operations require the bridge secret. Live unauthenticated GET returns `Use authenticated POST`, and an incorrect-secret POST returns `Unauthorized`; no data is returned. Authenticated Android-to-bridge POST is not yet verified. Node tests use service doubles.
 - Pushing structured workouts to Garmin is not implemented by this read-only Personal API.
 - Original FIT files remain on the phone; cloud archives currently retain original JSON. Additional Garmin recovery endpoints, multi-user authentication, release signing and Play Store publication remain future work.
 
