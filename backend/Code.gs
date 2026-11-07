@@ -6,7 +6,8 @@ var HEADERS = {
   Wellness: ['date','sleep_hours','sleep_score','hrv_ms','resting_hr','coverage_note','source_hash','updated_at'],
   Feedback: ['feedback_id','activity_id','workout_id','created_at','rpe','soreness','fatigue','note'],
   Matches: ['activity_id','workout_id','updated_at'],
-  Archive: ['record_id','sha256','drive_file_id','created_at']
+  Archive: ['record_id','sha256','drive_file_id','created_at'],
+  Health: ['change_id','record_id','kind','date','name','calories_kcal','portions','weight_kg','note','deleted','updated_at']
 };
 
 function doGet() { return output({ok:false,error:'Use authenticated POST'}); }
@@ -30,11 +31,12 @@ function doPost(e) {
       payload.wellness.forEach(function(w){var row=Object.assign({},w,{source_hash:hash(w.raw_json||JSON.stringify(w)),updated_at:new Date().toISOString()});upsert(db,'Wellness','date',row);});
       payload.feedback.forEach(function(f){if(!find(db,'Feedback','feedback_id',f.feedback_id))append(db,'Feedback',f);});
       payload.matches.forEach(function(m){upsert(db,'Matches','activity_id',m);});
+      appendHealth(db,payload.health_new);
     }
-    return output({ok:true,ack_feedback:payload.feedback.map(function(f){return f.feedback_id;}),snapshot:snapshot(db)});
+    return output({ok:true,ack_feedback:payload.feedback.map(function(f){return f.feedback_id;}),ack_health:req.action==='sync'?payload.health_ack:[],snapshot:snapshot(db)});
   } catch(err) {
     // No stack, upstream response, tokens, or arbitrary exception text in the public response.
-    var allowed=['Unauthorized','Invalid request','Invalid action','Invalid activity','Invalid wellness','Invalid feedback','Feedback conflict','Invalid match','Schema mismatch'];
+    var allowed=['Unauthorized','Invalid request','Invalid action','Invalid activity','Invalid wellness','Invalid feedback','Feedback conflict','Invalid match','Invalid health','Health conflict','Schema mismatch'];
     return output({ok:false,error:allowed.indexOf(err.message)>=0?err.message:'Bridge unavailable; check setup and retry'});
   } finally {if(lock)lock.releaseLock();}
 }
@@ -83,8 +85,68 @@ function validate(req,db) {
    feedbackIds[f.feedback_id]=fingerprint;
  });
  p.matches.forEach(function(m){if(!validId(m.activity_id)||(m.workout_id!==''&&!validId(m.workout_id))||!validTime(m.updated_at))throw Error('Invalid match');});
+ p.health=req.health===undefined?[]:req.health;
+ var health=validateHealth(p.health,db);p.health_new=health.changes;p.health_ack=health.ack;
  return p;
 }
+
+// Health has its own reader/writer: other sheets keep their existing representation.
+// Prefix every string, including the ID, with a Sheets literal marker. Native Sheets
+// removes one marker on read; literal-only adapters retain it. The ID cannot itself
+// contain an apostrophe, so it tells us whether to remove exactly one from each cell.
+// This also preserves intentional leading apostrophes without conflating payloads.
+function healthRow(obj) {
+ return HEADERS.Health.map(function(k){var v=obj[k];return typeof v==='string'?"'"+v:safe(v);});
+}
+function healthRecords(db) {
+ return records(db,'Health').map(function(obj){
+   var literal=typeof obj.change_id==='string'&&obj.change_id.charAt(0)==="'";
+   HEADERS.Health.forEach(function(k){if(literal&&typeof obj[k]==='string'&&obj[k].charAt(0)==="'")obj[k]=obj[k].slice(1);});
+   ['date','name','note'].forEach(function(k){if(obj[k]===null)obj[k]='';});
+   return obj;
+ });
+}
+function healthFingerprint(obj) {return JSON.stringify(HEADERS.Health.map(function(k){return obj[k];}));}
+function validHealth(h) {
+ if(!h||typeof h!=='object'||Array.isArray(h)||typeof h.change_id!=='string'||!validId(h.change_id)||typeof h.record_id!=='string'||!validId(h.record_id)||['meal','favourite','weight','goal'].indexOf(h.kind)<0||typeof h.note!=='string'||h.note.length>1000||typeof h.deleted!=='boolean'||typeof h.updated_at!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(h.updated_at)||isNaN(Date.parse(h.updated_at))||new Date(h.updated_at).toISOString()!==h.updated_at)return false;
+ var food=h.kind==='meal'||h.kind==='favourite',dated=h.kind==='meal'||h.kind==='weight';
+ if(dated?!validDate(h.date):h.date!=='')return false;
+ if(food)return typeof h.name==='string'&&h.name.length>=1&&h.name.length<=120&&typeof h.calories_kcal==='number'&&isFinite(h.calories_kcal)&&h.calories_kcal>=0&&h.calories_kcal<=20000&&h.weight_kg===null&&(h.kind==='favourite'?h.portions===1:typeof h.portions==='number'&&isFinite(h.portions)&&h.portions>0&&h.portions<=100);
+ return h.name===''&&h.calories_kcal===null&&h.portions===null&&typeof h.weight_kg==='number'&&isFinite(h.weight_kg)&&h.weight_kg>0&&h.weight_kg<=500&&h.record_id===(h.kind==='weight'?'weight:'+h.date:'goal-weight');
+}
+function validateHealth(changes,db) {
+ if(!Array.isArray(changes)||changes.length>100)throw Error('Invalid health');
+ changes.forEach(function(h){if(!validHealth(h))throw Error('Invalid health');});
+ var fingerprints=new Map(),known=new Set(),ack=[],fresh=[];
+ healthRecords(db).forEach(function(h){
+   var fingerprint=healthFingerprint(h);
+   if(fingerprints.has(h.change_id)&&fingerprints.get(h.change_id)!==fingerprint)throw Error('Health conflict');
+   fingerprints.set(h.change_id,fingerprint);known.add(h.change_id);
+ });
+ changes.forEach(function(h){
+   var fingerprint=healthFingerprint(h);
+   if(fingerprints.has(h.change_id)&&fingerprints.get(h.change_id)!==fingerprint)throw Error('Health conflict');
+   if(ack.indexOf(h.change_id)<0)ack.push(h.change_id);
+   if(!known.has(h.change_id)){fresh.push(h);known.add(h.change_id);}
+   fingerprints.set(h.change_id,fingerprint);
+ });
+ return {changes:fresh,ack:ack};
+}
+function appendHealth(db,changes) {
+ if(!changes.length)return;
+ var s=sheet(db,'Health'),start=s.getLastRow()+1,required=start+changes.length-1,capacity=s.getMaxRows();
+ if(required>capacity)s.insertRowsAfter(capacity,required-capacity);
+ s.getRange(start,1,changes.length,HEADERS.Health.length).setValues(changes.map(healthRow));
+}
+function currentHealth(changes) {
+ var latest=new Map();
+ changes.forEach(function(h){
+   var old=latest.get(h.record_id),time=Date.parse(h.updated_at),oldTime=old?Date.parse(old.updated_at):0;
+   if(!old||time>oldTime||(time===oldTime&&h.change_id>old.change_id))latest.set(h.record_id,h);
+ });
+ return Array.from(latest.values());
+}
+
 function archive(db,props,id,json) {
  var digest=hash(json), record=id+':'+digest;
  if(find(db,'Archive','record_id',record))return;
@@ -94,7 +156,7 @@ function archive(db,props,id,json) {
 }
 function snapshot(db) {
  var activities=records(db,'Activities').sort(function(a,b){return String(b.start_utc).localeCompare(String(a.start_utc));}).slice(0,500);
- return {events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:records(db,'Wellness').sort(function(a,b){return String(b.date).localeCompare(String(a.date));}).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),server_time:new Date().toISOString()};
+ return {events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:records(db,'Wellness').sort(function(a,b){return String(b.date).localeCompare(String(a.date));}).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),server_time:new Date().toISOString()};
 }
 
 // Run once from the editor after authorisation. Only counts are logged; never credentials or health records.
@@ -106,4 +168,11 @@ function verifySetup() {
  var ready=!!DriveApp.getFolderById(props.getProperty('ARCHIVE_FOLDER_ID')).getId();
  var result={ok:ready,events:records(db,'Events').length,plan_revisions:records(db,'Plan').length,archive_ready:ready};
  console.log(JSON.stringify(result));return result;
+}
+
+// Editor-only, read-only Health setup check. It returns no individual records.
+function verifyHealthSetup() {
+ var props=PropertiesService.getScriptProperties(),db=SpreadsheetApp.openById(props.getProperty('SPREADSHEET_ID'));
+ var changes=healthRecords(db);
+ return {ok:true,health_changes:changes.length,health_records:currentHealth(changes).length};
 }

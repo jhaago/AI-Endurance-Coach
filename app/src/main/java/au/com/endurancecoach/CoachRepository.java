@@ -52,17 +52,26 @@ final class CoachRepository implements AutoCloseable {
  }
  // Each successful upload already returns a full snapshot. An idle refresh still needs one read.
  void syncCloud(BridgeClient client) throws Exception {
-  JSONObject local=store.get("local");JSONArray feedback=store.pending("feedback"),matches=store.pending("match");
+  JSONObject local=store.get("local");JSONArray feedback=store.pending("feedback"),matches=store.pending("match"),health=store.pending("health");
   int requests=uploadChanged(client,"activities",array(local,"activities"),"activity_id",10)
     +uploadChanged(client,"wellness",array(local,"wellness"),"date",3);
   for(int start=0;start<feedback.length();start+=30){send(client,new JSONObject().put("action","sync").put("feedback",slice(feedback,start,30)));requests++;}
   for(int start=0;start<matches.length();start+=30){send(client,new JSONObject().put("action","sync").put("matches",slice(matches,start,30)));requests++;}
+  for(int start=0;start<health.length();start+=30){send(client,new JSONObject().put("action","sync").put("health",slice(health,start,30)));requests++;}
   if(requests==0)send(client,new JSONObject().put("action","snapshot"));
  }
  private void send(BridgeClient client,JSONObject request) throws Exception {
   JSONObject result=client.call(request);JSONArray ack=array(result,"ack_feedback");
-  store.acceptSnapshot(result.getJSONObject("snapshot"),ack,array(request,"matches"));
+  JSONArray healthAck=new JSONArray();JSONObject snapshot=result.getJSONObject("snapshot");
+  if(request.has("health")){
+   if(result.optJSONArray("ack_health")==null||snapshot.optJSONArray("health")==null)throw new IOException("Health saved on phone; update the training database bridge before syncing Health");
+   HashSet<String> sent=new HashSet<>();JSONArray changes=request.getJSONArray("health");for(int i=0;i<changes.length();i++)sent.add(changes.getJSONObject(i).getString("change_id"));
+   JSONArray accepted=result.getJSONArray("ack_health");for(int i=0;i<accepted.length();i++)if(sent.contains(accepted.getString(i)))healthAck.put(accepted.getString(i));
+  }
+  store.acceptSnapshot(snapshot,ack,array(request,"matches"),healthAck);
  }
+ JSONArray healthRecords() throws Exception {return store.healthRecords();}
+ void saveHealth(JSONArray changes) throws Exception {store.saveHealth(changes);}
  private static JSONArray slice(JSONArray source,int start,int size) throws Exception {JSONArray out=new JSONArray();for(int i=start;i<Math.min(source.length(),start+size);i++)out.put(source.get(i));return out;}
  private int uploadChanged(BridgeClient client,String kind,JSONArray rows,String key,int batchSize) throws Exception {
   JSONObject sent=store.get("uploaded:"+kind);JSONArray changed=new JSONArray();

@@ -1,16 +1,16 @@
 # Endurance Coach
 
-A small, personal Android training app: Today, weekly Plan, Progress and recovery Insights. Garmin activities and wellness are imported using the **official Garmin Connect Personal API**. ChatGPT can review the private Google Sheets training database and append future workout revisions through its connected Google Drive tools. No in-app AI service or OpenAI API key is required.
+A small, personal Android training app: Today, weekly Plan, Progress, recovery Insights and a Health diary. Garmin activities and wellness are imported using the **official Garmin Connect Personal API**. ChatGPT can review the private Google Sheets training database and append future workout revisions through its connected Google Drive tools. No in-app AI service or OpenAI API key is required.
 
 Initial programme: Herdy's Frontyard Ultra, **12 March 2027**. Primary **10 yards / 67.06 km**, stretch **12 yards / 80.47 km**. Three weekly runs, optional fourth, plus strength and recovery. Future events are configured in the Events sheet.
 
 ## Current status
 
-- Native Android app with four screens, dark/light/system appearance, encrypted connections, original-file archive, background/manual sync, feedback outbox and conservative automatic workout matching.
+- Native Android app with five screens, dark/light/system appearance, encrypted connections, original-file archive, background/manual sync, feedback outbox and conservative automatic workout matching.
 - Garmin client, token renewal, activity pagination, normalization and original FIT decoding covered by synthetic tests.
 - Apps Script bridge and private Sheets ledger support idempotent data upload and append-only plan revisions.
 - **Live activity, plan and recovery import are verified.** Version 0.1.1 retains recovery warnings and provides safe import diagnostics. The Google bridge is deployed, its live configuration check passed, and anonymous or incorrect-secret requests are rejected. No account credentials are included.
-- The initial central plan contains a recovery check-in. A full running programme should be set after importing current training and recovery data.
+- The central running programme includes Tuesday/Thursday sessions and Sunday morning long runs with Emerald Striders; future changes remain editable in the private database.
 
 ## Build
 
@@ -32,7 +32,7 @@ Install `app/build/outputs/apk/debug/app-debug.apk` on Android 8+. The first deb
 
 The plan checks for updates when the app opens and every minute while it remains open. Garmin imports run manually and approximately every six hours via Android JobScheduler; Android can defer background work. Garmin data is available only after the watch syncs to Garmin Connect. This is not a live watch sensor connection.
 
-The app opens in dark mode. Choose **Settings → Appearance** for Light or Follow phone. Daily screens show workouts, activity summaries and recovery measurements. From 0.3.2, **Workout details** shows the current session and feedback action; revision history remains in the database and is hidden from the app. From 0.3.1, sync status, warnings, queue counts, timestamps and controls live under **Settings → Sync & import details**, with no sync banner on the four tabs. The heading reads **ENDURANCE COACH**. Missing measurements remain blank. Native rendering tests use synthetic offline records and write previews to `app/build/ui-previews`.
+The app opens in dark mode. Choose **Settings → Appearance** for Light or Follow phone. Daily screens show workouts, activity summaries and recovery measurements. From 0.3.2, **Workout details** shows the current session and feedback action; revision history remains in the database and is hidden from the app. From 0.3.1, sync status, warnings, queue counts, timestamps and controls live under **Settings → Sync & import details**, with no sync banner on daily tabs. The heading reads **ENDURANCE COACH**. Missing measurements remain blank. Native rendering tests use synthetic offline records and write previews to `app/build/ui-previews`.
 
 Version 0.3.0 adds a selectable **12-week running-distance graph** to Progress, with distance, time and elevation for Monday–Sunday weeks in Perth. The current week is labelled "So far". Tap a point or use the chart's earlier/later accessibility actions. Unknown import periods are gaps; verified empty weeks are zero. An unavailable measurement stays blank rather than undercounting its week's total.
 
@@ -41,3 +41,11 @@ After updating, use **Settings → Sync & import details → Sync Garmin + plan*
 Version 0.3.1 reduces repeat-sync requests: unchanged activity details can be reused for up to 24 hours when a successful detail and matching full list summary are held locally. Summary changes, expiry, invalid/missing cache entries or clock rollback trigger a fetch. Missing FIT files still retry. Upload responses already contain complete snapshots, so the app skips a redundant final fetch after uploads; a no-change refresh still fetches one snapshot. **Refresh plan** skips Garmin downloads and sends queued updates. Initial backfill, recovery requests and Apps Script/network latency remain; no live phone speed benchmark is claimed.
 
 See [Garmin verification](docs/GARMIN.md), [chat update workflow](docs/CHAT_WORKFLOW.md), [data contract](docs/DATA.md) and [validation and limitations](docs/VALIDATION.md).
+
+## Health (0.4.0 preview)
+
+The fifth tab logs individual meals, calories per portion and adjustable portions. Save favourites, add one portion with one tap, or choose Options to adjust portions. Favourite edits do not change past meals. Meals, favourites and weights can be edited or removed; choose the date at the top for earlier entries. Weight has an optional goal, 30-day measured chart and seven-day measured average. Logged calories have a 14-day chart and seven-day average over logged days only; missing entries stay blank. Calories are entered manually; there is no food database, automatic estimate or prescribed deficit.
+
+All Health changes persist locally and queue offline. A dedicated immutable `Health` change ledger preserves history and tombstones. Cloud sync requires deploying the updated `backend/Code.gs` to the existing bridge URL; against the previous bridge, Health stays queued and Settings explains the required upgrade. Acknowledgements remove only explicitly accepted changes. Existing training clients remain supported. See [Health contract](docs/HEALTH.md).
+
+The previous temporary APK signing key was lost during workspace reset. Debug builds now use package `au.com.endurancecoach.preview` and label **Endurance Coach Preview**, version 0.4.0 (7). They install alongside the existing app; do not uninstall the old app or expect its private settings/offline data to migrate. Re-enter connections to download the central training history. CI debug certificates are ephemeral; preserve the private signing key for future builds. Never commit keys or secrets. The Health bridge deployment is pending renewed Google authentication; no live Health write has been claimed.

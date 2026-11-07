@@ -2,9 +2,9 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
-function harness(){
- const tables={}; const files=[];
- class Sheet {constructor(name,headers){this.name=name;this.rows=[headers];} getDataRange(){return {getValues:()=>this.rows.map(r=>r.slice())};} getLastRow(){return this.rows.length;} getRange(row,col,nr,nc){return {setValues:values=>{values.forEach((v,i)=>this.rows[row-1+i]=v.slice());},getValues:()=>this.rows.slice(row-1,row-1+nr).map(r=>r.slice(col-1,col-1+nc))};} appendRow(row){this.rows.push(row);} }
+function harness(options={}){
+ const tables={}; const files=[]; const writes=[];
+ class Sheet {constructor(name,headers){this.name=name;this.rows=[headers.slice()];this.maxRows=options.maxRows||1000;} read(rows){return rows.map(r=>r.map(v=>options.nativeLiterals&&this.name==='Health'&&typeof v==='string'&&v.startsWith("'")?v.slice(1):v));} getDataRange(){return {getValues:()=>this.read(this.rows)};} getMaxRows(){return this.maxRows;} insertRowsAfter(after,count){assert.equal(after,this.maxRows);this.maxRows+=count;} getLastRow(){return this.rows.length;} getRange(row,col,nr,nc){return {setValues:values=>{assert.ok(row+nr-1<=this.maxRows);assert.equal(values.length,nr);assert.ok(values.every(v=>v.length===nc));writes.push({sheet:this.name,row,col,nr,nc});values.forEach((v,i)=>this.rows[row-1+i]=v.slice());},getValues:()=>this.rows.slice(row-1,row-1+nr).map(r=>r.slice(col-1,col-1+nc))};} appendRow(row){this.rows.push(row);} }
  const ctx={console, JSON,Date,Math,Map,Set, Error, Utilities:{DigestAlgorithm:{SHA_256:1},Charset:{UTF_8:1},computeDigest:(_,s)=>[...require('node:crypto').createHash('sha256').update(s).digest()],newBlob:(s,m,n)=>({s,m,n})},
  PropertiesService:{getScriptProperties:()=>({getProperty:k=>({BRIDGE_SECRET:'x'.repeat(40),SPREADSHEET_ID:'sheet',ARCHIVE_FOLDER_ID:'folder'})[k]})},
  SpreadsheetApp:{openById:()=>({getSheetByName:name=>tables[name]})},
@@ -14,7 +14,7 @@ function harness(){
  vm.createContext(ctx); vm.runInContext(fs.readFileSync('backend/Code.gs','utf8'),ctx);
  for(const [name,headers] of Object.entries(ctx.HEADERS))tables[name]=new Sheet(name,headers);
  const call=(payload)=>JSON.parse(ctx.doPost({postData:{contents:JSON.stringify({secret:'x'.repeat(40),...payload})}}).text);
- return {ctx,tables,files,call};
+ return {ctx,tables,files,writes,call};
 }
 test('unauthorized requests expose no data and mutate nothing',()=>{const h=harness();assert.equal(h.call({secret:'bad',action:'sync',activities:[]}).error,'Unauthorized');assert.equal(h.tables.Activities.rows.length,1);});
 test('repeated delivery of activity creates one normalized record and one original archive',()=>{
@@ -40,4 +40,64 @@ test('null diagnostic upload cannot erase same-day measured cloud wellness',()=>
  const h=harness();h.call({action:'sync',wellness:[{date:'2026-11-07',sleep_hours:7,sleep_score:80,hrv_ms:44,resting_hr:52}]});
  const r=h.call({action:'sync',wellness:[{date:'2026-11-07',sleep_hours:null,sleep_score:75,hrv_ms:null,resting_hr:null,coverage_note:'HTTP 204 no data'}]});
  assert.equal(r.ok,true);const w=r.snapshot.wellness[0];assert.equal(w.sleep_hours,7);assert.equal(w.sleep_score,75);assert.equal(w.hrv_ms,44);assert.equal(w.resting_hr,52);assert.ok(w.coverage_note.includes('retained'));
+});
+
+const health=(overrides={})=>({change_id:'00000000-0000-4000-8000-000000000001',record_id:'meal-1',kind:'meal',date:'2026-11-07',name:'Synthetic meal',calories_kcal:450,portions:1,weight_kg:null,note:'',deleted:false,updated_at:'2026-11-07T12:00:00.001Z',...overrides});
+const change=(n,overrides={})=>health({change_id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,...overrides});
+test('Health accepts all kinds in one bounded append and acknowledges explicit unique IDs',()=>{
+ const h=harness();const batch=[health(),change(2,{record_id:'favourite-1',kind:'favourite',date:'',portions:1}),change(3,{record_id:'weight:2026-11-07',kind:'weight',name:'',calories_kcal:null,portions:null,weight_kg:72}),change(4,{record_id:'goal-weight',kind:'goal',date:'',name:'',calories_kcal:null,portions:null,weight_kg:70})];
+ const r=h.call({action:'sync',health:[...batch,batch[0]]});assert.equal(r.ok,true);assert.deepEqual(r.ack_health,batch.map(v=>v.change_id));assert.deepEqual(r.snapshot.health,batch);assert.equal(h.tables.Health.rows.length,5);assert.deepEqual(h.writes.filter(w=>w.sheet==='Health'),[{sheet:'Health',row:2,col:1,nr:4,nc:11}]);
+});
+test('Health retry is immutable and conflicts reject the entire mixed batch before archives',()=>{
+ const h=harness(), first=health();assert.equal(h.call({action:'sync',health:[first]}).ok,true);
+ assert.deepEqual(h.call({action:'sync',health:[first]}).ack_health,[first.change_id]);assert.equal(h.tables.Health.rows.length,2);
+ const r=h.call({action:'sync',health:[change(2),{...first,calories_kcal:451}],activities:[{activity_id:'1',start_utc:'2026-11-07T00:00:00Z',type:'running',raw_json:'synthetic'}]});
+ assert.equal(r.error,'Health conflict');assert.equal(h.tables.Health.rows.length,2);assert.equal(h.tables.Activities.rows.length,1);assert.equal(h.files.length,0);
+ assert.equal(h.call({action:'sync',health:[change(3),change(3,{name:'conflict'})]}).error,'Health conflict');assert.equal(h.tables.Health.rows.length,2);
+});
+test('Health materialisation chooses parsed timestamp then change ID and keeps tombstones',()=>{
+ const h=harness(), latest=change(4,{deleted:true,updated_at:'2026-11-08T12:00:00.002Z'});
+ const r=h.call({action:'sync',health:[latest,health(),change(3,{updated_at:latest.updated_at,name:'tie loses'}),change(5,{updated_at:'2026-11-08T12:00:00.001Z'})]});
+ assert.deepEqual(r.snapshot.health,[latest]);assert.equal(h.tables.Health.rows.length,5);assert.deepEqual(h.call({action:'snapshot'}).snapshot.health,[latest]);
+});
+for(const nativeLiterals of [false,true])test(`Health formula-safe strings and intentional apostrophes survive retries (native=${nativeLiterals})`,()=>{
+ const h=harness({nativeLiterals});
+ const batch=['=SUM(1,2)','+meal','@meal','-meal',"'=literal","''=literal","'plain"].map((name,i)=>change(i+1,{record_id:`meal-${i}`,name,note:name}));
+ const r=h.call({action:'sync',health:batch});assert.deepEqual(r.snapshot.health,batch);assert.deepEqual(h.call({action:'sync',health:batch}).ack_health,batch.map(v=>v.change_id));assert.equal(h.tables.Health.rows.length,batch.length+1);
+ assert.equal(h.call({action:'sync',health:[{...batch[0],name:"'=SUM(1,2)"}]}).error,'Health conflict');
+});
+test('Health restores blank date name and note while preserving null numeric fields',()=>{
+ const h=harness();const value=health({record_id:'goal-weight',kind:'goal',date:'',name:'',note:'',calories_kcal:null,portions:null,weight_kg:70});
+ assert.deepEqual(h.call({action:'sync',health:[value]}).snapshot.health,[value]);
+});
+test('Health rejects malformed full records before any mixed batch write',()=>{
+ const variants=[null,[],{},...['change_id','record_id','kind','date','name','calories_kcal','portions','weight_kg','note','deleted','updated_at'].map(k=>{const value=health();delete value[k];return value;}),
+ health({change_id:'bad id'}),health({record_id:'bad id'}),health({kind:'unknown'}),health({date:'2026-02-30'}),health({date:'2026-11-07T00:00:00Z'}),health({name:''}),health({name:'x'.repeat(121)}),health({calories_kcal:-1}),health({calories_kcal:20001}),health({calories_kcal:'2'}),health({portions:0}),health({portions:100.1}),health({weight_kg:70}),health({note:null}),health({note:'x'.repeat(1001)}),health({deleted:0}),health({updated_at:'2026-11-07T12:00:00Z'}),health({updated_at:'2026-02-30T12:00:00.000Z'}),health({updated_at:'2026-11-07T12:00:00.000+00:00'}),
+ health({kind:'favourite',date:'',portions:2}),health({kind:'favourite',portions:1}),health({kind:'weight',name:'',calories_kcal:null,portions:null,weight_kg:70}),health({kind:'weight',record_id:'weight:2026-11-07',name:'',calories_kcal:null,portions:null,weight_kg:0}),health({kind:'goal',record_id:'goal-weight',date:'',name:'',calories_kcal:null,portions:null,weight_kg:500.1})];
+ for(const value of variants){const h=harness();const r=h.call({action:'sync',health:[health(),value],feedback:[{feedback_id:'f',activity_id:'1',created_at:'2026-11-07T00:00:00Z',rpe:1,soreness:1,fatigue:1,note:''}]});assert.equal(r.error,'Invalid health',JSON.stringify(value));assert.equal(h.tables.Feedback.rows.length,1);assert.equal(h.tables.Health.rows.length,1);}
+});
+test('Health limits batches and validates its schema before any mixed writes',()=>{
+ for(const healthValue of [null,{},'text',Array.from({length:101},(_,i)=>change(i+1))]){const h=harness();assert.equal(h.call({action:'sync',health:healthValue}).error,'Invalid health');}
+ const h=harness();h.tables.Health.rows[0][1]='wrong';assert.equal(h.call({action:'sync',health:[health()],activities:[{activity_id:'1',type:'running',start_utc:'2026-11-07T00:00:00Z'}]}).error,'Schema mismatch');assert.equal(h.tables.Activities.rows.length,1);
+});
+test('snapshot requests never acknowledge unpersisted Health changes and old requests stay valid',()=>{
+ const h=harness();const r=h.call({action:'snapshot',health:[health()]});assert.equal(r.ok,true);assert.deepEqual(r.ack_health,[]);assert.deepEqual(r.snapshot.health,[]);assert.equal(h.tables.Health.rows.length,1);assert.equal(h.call({action:'sync'}).ok,true);
+});
+test('Health accepts 100 changes and preserves exact numeric bounds and canonical fields',()=>{
+ const h=harness();const batch=Array.from({length:100},(_,i)=>change(i+1,{record_id:`meal-${i}`,name:'x'.repeat(120),note:'n'.repeat(1000),calories_kcal:i===0?0:20000,portions:100}));
+ const result=h.call({action:'sync',health:batch});assert.equal(result.ok,true);assert.equal(result.ack_health.length,100);assert.deepEqual(result.snapshot.health,batch);assert.equal(h.writes.length,1);
+ assert.equal(h.call({action:'sync',health:[{...batch[0],ignored:'not a header'}]}).ok,true);assert.equal(h.tables.Health.rows.length,101);
+});
+test('Health validation failure in another record family leaves ledger untouched',()=>{
+ const h=harness();assert.equal(h.call({action:'sync',health:[health()],matches:[{activity_id:'',workout_id:''}]}).error,'Invalid match');assert.equal(h.tables.Health.rows.length,1);
+});
+test('Health setup verification returns only schema and counts without changing rows',()=>{
+ const h=harness();h.call({action:'sync',health:[health(),change(2,{deleted:true,updated_at:'2026-11-08T12:00:00.000Z'})]});
+ assert.deepEqual(JSON.parse(JSON.stringify(h.ctx.verifyHealthSetup())),{ok:true,health_changes:2,health_records:1});assert.equal(h.tables.Health.rows.length,3);
+ delete h.tables.Health;assert.throws(()=>h.ctx.verifyHealthSetup(),/Schema mismatch/);
+});
+
+test('Health append grows the row grid when the bounded batch crosses capacity',()=>{
+ const h=harness({maxRows:2});const batch=[health(),change(2,{record_id:'meal-2'}),change(3,{record_id:'meal-3'})];
+ const result=h.call({action:'sync',health:batch});assert.equal(result.ok,true);assert.deepEqual(result.snapshot.health,batch);assert.equal(h.tables.Health.maxRows,4);assert.equal(h.writes.filter(w=>w.sheet==='Health').length,1);
 });

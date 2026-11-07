@@ -6,6 +6,7 @@ import android.database.sqlite.*;
 import org.json.*;
 import java.util.*;
 import au.com.endurancecoach.core.JsonChunks;
+import au.com.endurancecoach.core.HealthRecords;
 
 final class LocalStore extends SQLiteOpenHelper {
  LocalStore(Context c){super(c.getApplicationContext(),"coach.db",null,1);}
@@ -17,6 +18,24 @@ final class LocalStore extends SQLiteOpenHelper {
  synchronized JSONArray pending(String kind) throws Exception {JSONArray a=new JSONArray();try(Cursor c=getReadableDatabase().rawQuery("SELECT json FROM outbox WHERE kind=? ORDER BY rowid",new String[]{kind})){while(c.moveToNext())a.put(new JSONObject(c.getString(0)));}return a;}
  synchronized void ack(String id){getWritableDatabase().delete("outbox","id=?",new String[]{id});}
  synchronized void acceptSnapshot(JSONObject snapshot,JSONArray feedback,JSONArray sentMatches) throws Exception {
-  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{put("snapshot",snapshot);for(int i=0;i<feedback.length();i++)ack(feedback.getString(i));for(int i=0;i<sentMatches.length();i++){JSONObject m=sentMatches.getJSONObject(i);String id="match:"+m.getString("activity_id");db.delete("outbox","id=? AND json=?",new String[]{id,m.toString()});}db.setTransactionSuccessful();}finally{db.endTransaction();}
+  acceptSnapshot(snapshot,feedback,sentMatches,new JSONArray());
+ }
+ synchronized JSONArray healthRecords() throws Exception {return HealthRecords.current(CoachRepository.array(get("snapshot"),"health"),CoachRepository.array(get("health-local"),"records"),pending("health"));}
+ synchronized void saveHealth(JSONArray changes) throws Exception {
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{
+   JSONArray current=HealthRecords.current(healthRecords(),changes);put("health-local",new JSONObject().put("records",current));
+   for(int i=0;i<changes.length();i++){JSONObject change=changes.getJSONObject(i);queue("health:"+change.getString("change_id"),"health",change);}
+   db.setTransactionSuccessful();
+  }finally{db.endTransaction();}
+ }
+ synchronized void acceptSnapshot(JSONObject snapshot,JSONArray feedback,JSONArray sentMatches,JSONArray healthAck) throws Exception {
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{
+   JSONArray current=HealthRecords.current(healthRecords(),CoachRepository.array(snapshot,"health"));
+   put("snapshot",snapshot);put("health-local",new JSONObject().put("records",current));
+   for(int i=0;i<feedback.length();i++)ack(feedback.getString(i));
+   for(int i=0;i<healthAck.length();i++)ack("health:"+healthAck.getString(i));
+   for(int i=0;i<sentMatches.length();i++){JSONObject m=sentMatches.getJSONObject(i);db.delete("outbox","id=? AND json=?",new String[]{"match:"+m.getString("activity_id"),m.toString()});}
+   db.setTransactionSuccessful();
+  }finally{db.endTransaction();}
  }
 }

@@ -19,9 +19,9 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class MainActivity extends Activity {
-    private static final String[] TABS = {"Today", "Plan", "Progress", "Insights"};
+    private static final String[] TABS = {"Today", "Plan", "Progress", "Insights", "Health"};
     private static final int[] ICONS = {R.drawable.ic_today, R.drawable.ic_plan,
-            R.drawable.ic_progress, R.drawable.ic_insights};
+            R.drawable.ic_progress, R.drawable.ic_insights, R.drawable.ic_health};
     private CoachTheme theme;
     private CoachRepository repo;
     private LinearLayout root, content;
@@ -31,6 +31,7 @@ public final class MainActivity extends Activity {
     private int tab;
     private int progressWeekOffset;
     private LocalDate week;
+    private LocalDate healthDay;
     private boolean active, busy;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -45,10 +46,12 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         repo = new CoachRepository(this);
         week = today().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        healthDay = today();
         if (state != null) {
             tab = Math.max(0, Math.min(TABS.length - 1, state.getInt("tab", 0)));
             progressWeekOffset = Math.max(0, Math.min(11, state.getInt("progress_week", 0)));
             week = LocalDate.parse(state.getString("week", week.toString()));
+            healthDay = LocalDate.parse(state.getString("health_day", healthDay.toString()));
         }
         getWindow().setStatusBarColor(theme.background);
         getWindow().setNavigationBarColor(!theme.dark && Build.VERSION.SDK_INT < 27 ? theme.ink : theme.background);
@@ -63,6 +66,7 @@ public final class MainActivity extends Activity {
         state.putInt("tab", tab);
         state.putInt("progress_week", progressWeekOffset);
         state.putString("week", week.toString());
+        state.putString("health_day", healthDay.toString());
         state.putInt("scroll", screenScroll == null ? 0 : screenScroll.getScrollY());
         super.onSaveInstanceState(state);
     }
@@ -167,7 +171,8 @@ public final class MainActivity extends Activity {
             content = column(); screenScroll.addView(content);
             root.addView(screenScroll, new LinearLayout.LayoutParams(-1, 0, 1));
             if (tab == 0) todayScreen(s); else if (tab == 1) planScreen(s);
-            else if (tab == 2) progressScreen(s); else insightsScreen(s);
+            else if (tab == 2) progressScreen(s); else if (tab == 3) insightsScreen(s);
+            else new HealthScreen(this, repo, theme, healthDay, day -> { healthDay = day; render(); }, () -> { render(true); sync(false); }).render(content);
             root.addView(navigation()); setContentView(root); root.requestApplyInsets();
             if (previousScroll > 0) screenScroll.post(() -> screenScroll.scrollTo(0, previousScroll));
         } catch (Exception e) {
@@ -193,8 +198,8 @@ public final class MainActivity extends Activity {
         }
         if (syncDetailsPending != null) {
             try {
-                int count = repo.store.pending("feedback").length();
-                syncDetailsPending.setText(count + " check-in(s) waiting to sync");
+                int count = repo.store.pending("feedback").length() + repo.store.pending("health").length();
+                syncDetailsPending.setText(count + " entry change(s) waiting to sync");
                 syncDetailsPending.setVisibility(count == 0 ? View.GONE : View.VISIBLE);
             } catch (Exception ignored) { /* Keep the last known queue count. */ }
         }
