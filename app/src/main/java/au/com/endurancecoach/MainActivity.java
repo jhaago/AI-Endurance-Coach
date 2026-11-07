@@ -25,7 +25,8 @@ public final class MainActivity extends Activity {
     private CoachTheme theme;
     private CoachRepository repo;
     private LinearLayout root, content;
-    private TextView status;
+    private String currentSyncMessage = "";
+    private TextView syncDetailsStatus, syncDetailsTimes, syncDetailsPending;
     private ScrollView screenScroll;
     private int tab;
     private int progressWeekOffset;
@@ -153,16 +154,14 @@ public final class MainActivity extends Activity {
                 }
                 view.setPadding(left + dp(20), top + dp(8), right + dp(20), bottom + dp(4)); return insets;
             });
-            LinearLayout head = row(); TextView brand = text("ENDURANCE", 12, theme.accent, true);
-            brand.setLetterSpacing(.16f); head.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+            LinearLayout head = row(); TextView brand = text("ENDURANCE COACH", 12, theme.accent, true);
+            brand.setLetterSpacing(.10f); head.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
             Button settings = button("Settings", this::settings);
             settings.setTextSize(12); settings.setBackground(ripple(theme.background, 14, false));
             head.addView(settings, new LinearLayout.LayoutParams(-2, -2)); root.addView(head);
             root.addView(text(TABS[tab], 30, theme.ink, true));
-            status = text("", 12, theme.muted, false);
-            status.setMaxLines(2); status.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            status.setOnClickListener(v -> syncDetails()); root.addView(status);
-            updateStatus(busy ? "Syncing…" : repo.store.get("status").optString("message", ""));
+            updateStatus(busy ? "Syncing…" : currentSyncMessage.isEmpty()
+                    ? repo.store.get("status").optString("message", "") : currentSyncMessage);
             screenScroll = new ScrollView(this); screenScroll.setFillViewport(true);
             screenScroll.setClipToPadding(false); screenScroll.setPadding(0, dp(6), 0, dp(12));
             content = column(); screenScroll.addView(content);
@@ -176,19 +175,29 @@ public final class MainActivity extends Activity {
             error.setPadding(dp(24), dp(48), dp(24), dp(24));
             error.addView(text("Training data needs attention", 24, theme.ink, true));
             error.addView(text("Check workout dates and revisions in the training database, then retry.", 16, theme.muted, false));
-            error.addView(button("Settings", this::settings)); error.addView(button("Retry sync", () -> sync(false)));
+            error.addView(button("Settings", this::settings));
             setContentView(error);
         }
     }
     private void updateStatus(String message) {
-        if (status == null) return;
         if (message.isEmpty()) {
             try { message = repo.vault.get("bridge").isEmpty() ? "Connect in Settings to get started" : "Ready to sync"; }
             catch (Exception e) { message = "Check connections in Settings"; }
         }
         message = message.replace("see Insights import details", "see Settings → Sync & import details");
-        status.setText(message); status.setContentDescription(message + ". Tap for sync details.");
-        status.setTextColor(theme.muted);
+        currentSyncMessage = message;
+        if (syncDetailsStatus != null) syncDetailsStatus.setText(message);
+        if (syncDetailsTimes != null) {
+            try { syncDetailsTimes.setText(syncTimes(repo.store.get("status"))); }
+            catch (Exception ignored) { /* Keep the last successfully read timestamps. */ }
+        }
+        if (syncDetailsPending != null) {
+            try {
+                int count = repo.store.pending("feedback").length();
+                syncDetailsPending.setText(count + " check-in(s) waiting to sync");
+                syncDetailsPending.setVisibility(count == 0 ? View.GONE : View.VISIBLE);
+            } catch (Exception ignored) { /* Keep the last known queue count. */ }
+        }
     }
     private LinearLayout navigation() {
         LinearLayout nav = row(); nav.setPadding(0, dp(8), 0, dp(2));
@@ -257,8 +266,6 @@ public final class MainActivity extends Activity {
             target.addView(text(String.format(Locale.UK, "%.2f km target · Stretch %d yards / %.2f km",
                     event.optDouble("primary_km", 67.06), event.optInt("stretch_yards", 12), event.optDouble("stretch_km", 80.47)), 13, theme.muted, false));
         }
-        content.addView(button("Sync Garmin + plan", () -> sync(true)));
-        pendingFeedback();
     }
     private void workout(JSONObject w, boolean completed, boolean featured) throws Exception {
         LinearLayout c = card(featured ? theme.accentSurface : theme.surface);
@@ -312,7 +319,6 @@ public final class MainActivity extends Activity {
             }
             if (!any) content.addView(text("Nothing scheduled", 13, theme.muted, false));
         }
-        content.addView(button("Refresh plan", () -> sync(false)));
     }
     private List<JSONObject> activities(JSONObject s) throws Exception {
         JSONArray a = CoachRepository.array(s, "activities"); List<JSONObject> list = new ArrayList<>();
@@ -348,7 +354,7 @@ public final class MainActivity extends Activity {
             values[1].setText(w.seconds == null ? "—" : durationSeconds(w.seconds));
             values[2].setText(w.elevation == null ? "—" : String.format(Locale.UK, "%.0f m", w.elevation));
             count.setText(w.runs + (w.runs == 1 ? " recorded run" : " recorded runs"));
-            coverage.setText(!w.covered ? "Imported totals only · sync Garmin to complete history"
+            coverage.setText(!w.covered ? "Imported totals only · earlier history may be incomplete"
                     : w.km == null || w.seconds == null || w.elevation == null ? "— means a measurement is unavailable"
                     : "Tap a week to view its totals · Mon–Sun");
         };
@@ -356,7 +362,7 @@ public final class MainActivity extends Activity {
         totals.addView(new WeeklyDistanceView(this, weeks, selected, theme, select), new LinearLayout.LayoutParams(-1, dp(200)));
         totals.addView(coverage);
         section("ACTIVITY HISTORY");
-        if (rows.isEmpty()) notice("Sync Garmin to see your completed activities.");
+        if (rows.isEmpty()) notice("Your completed activities will appear here.");
         for (int i = 0; i < Math.min(100, rows.size()); i++) {
             JSONObject a = rows.get(i); LinearLayout c = card();
             c.addView(text(dayLabel(PlanEngine.day(a)) + " · " + typeLabel(a.optString("type")), 12, theme.accent, true));
@@ -365,11 +371,6 @@ public final class MainActivity extends Activity {
             c.addView(text(matched.has(a.getString("activity_id")) ? "Workout matched" : "No workout match", 12, theme.muted, false));
             c.addView(button("View activity", () -> activityDetail(a)));
         }
-        pendingFeedback();
-    }
-    private void pendingFeedback() throws Exception {
-        int pending = repo.store.pending("feedback").length();
-        if (pending > 0) notice(pending + (pending == 1 ? " check-in saved" : " check-ins saved") + " on this phone · waiting to sync");
     }
     private List<JSONObject> wellness(JSONObject s) throws Exception {
         JSONArray a = CoachRepository.array(s, "wellness"); List<JSONObject> rows = new ArrayList<>();
@@ -391,7 +392,7 @@ public final class MainActivity extends Activity {
     }
     private void insightsScreen(JSONObject s) throws Exception {
         List<JSONObject> rows = wellness(s);
-        if (rows.isEmpty()) notice("Sync Garmin to see sleep, overnight HRV and resting heart rate.");
+        if (rows.isEmpty()) notice("Your recorded sleep, overnight HRV and resting heart rate will appear here.");
         else {
             JSONObject latest = rows.get(rows.size() - 1);
             section("RECOVERY · " + dayLabel(latest.optString("date")));
@@ -517,19 +518,30 @@ public final class MainActivity extends Activity {
     private void syncDetails() {
         try {
             LinearLayout box = dialogBox(); JSONObject st = repo.store.get("status");
-            box.addView(text(status == null ? st.optString("message", "Not yet synced") : status.getText().toString(), 15, theme.ink, true));
-            box.addView(text("Garmin: " + stamp(st.optString("garmin_sync")) + "\nPlan: " + stamp(st.optString("cloud_sync")), 14, theme.muted, false));
+            TextView message = text(currentSyncMessage.isEmpty() ? st.optString("message", "Not yet synced") : currentSyncMessage, 15, theme.ink, true);
+            TextView times = text(syncTimes(st), 14, theme.muted, false);
+            syncDetailsStatus = message; syncDetailsTimes = times; box.addView(message); box.addView(times);
+            TextView pending = text("", 14, theme.muted, false); syncDetailsPending = pending; box.addView(pending);
+            updateStatus(message.getText().toString());
             box.addView(text("Automatic sync", 16, theme.ink, true));
             box.addView(text("The plan refreshes at launch and each minute while open. Garmin sync runs about every 6 hours; Android may delay background work.", 14, theme.muted, false));
             box.addView(button("Sync Garmin + plan", () -> sync(true), true));
+            box.addView(button("Refresh plan", () -> sync(false)));
             List<JSONObject> days = wellness(repo.snapshot());
             for (int i = days.size() - 1; i >= Math.max(0, days.size() - 7); i--) {
                 JSONObject day = days.get(i); box.addView(text(day.optString("date"), 13, theme.accent, true));
                 box.addView(text(day.optString("coverage_note", "No import details recorded"), 13, theme.muted, false));
             }
             if (days.isEmpty()) box.addView(text("No recovery import details yet.", 14, theme.muted, false));
-            showDetails("Sync & import details", box);
+            AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Sync & import details")
+                    .setView(scroll(box)).setPositiveButton("Close", null).create();
+            dialog.setOnDismissListener(d -> {
+                if (syncDetailsStatus == message) { syncDetailsStatus = null; syncDetailsTimes = null; syncDetailsPending = null; }
+            }); dialog.show();
         } catch (Exception e) { toast("Import details unavailable"); }
+    }
+    private String syncTimes(JSONObject status) {
+        return "Garmin: " + stamp(status.optString("garmin_sync")) + "\nPlan: " + stamp(status.optString("cloud_sync"));
     }
     private void aboutData() {
         LinearLayout box = dialogBox();

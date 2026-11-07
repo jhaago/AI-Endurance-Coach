@@ -2,10 +2,10 @@
 
 ## Executed
 
-- `:core:test`: **41 tests passing**, including authentication/raw JWT/401 renewal, pagination, SI units, official response schema differences, original FIT decoding, null wellness, plan revisions, Perth matching, manual conflicts, event filtering, catch-up windows, bridge plan-refresh/actual separation, multi-megabyte Unicode-safe storage chunks and weekly running aggregation.
+- `:core:test`: **45 tests passing**, including authentication/raw JWT/401 renewal, pagination, SI units, official response schema differences, original FIT decoding, null wellness, plan revisions, Perth matching, manual conflicts, event filtering, catch-up windows, bridge plan-refresh/actual separation, multi-megabyte Unicode-safe storage chunks and weekly running aggregation.
 - `node --test backend/test/*.test.cjs`: **8 tests passing** against an in-memory Apps Script/Sheets/Drive harness, exercising authentication, validation-before-write, activity/archive idempotency, feedback retry/conflicts/formula escaping, revision snapshots and null metrics.
 - `:app:assembleDebug`: Android debug APK successfully produced.
-- `:app:lintDebug`: **0 errors, 11 warnings** in 0.3.0 (English-only text, small chart draw allocations, custom View editor-constructor guidance, synchronous credential removal and backup configuration guidance).
+- `:app:lintDebug`: **0 errors, 13 warnings** in 0.3.1 (English-only text, small chart draw allocations, custom View editor-constructor guidance, synchronous credential removal and backup configuration guidance).
 - `scripts/check_android_json.py`: compiled core JSON calls checked against Android API 35's real `android.jar`. This caught and eliminated a desktop-only `JSONObject.keySet()` call.
 - Independent code review completed. Its six important findings were addressed: Android JSON compatibility, bounded SQLite rows, checked persistence failures, offline catch-up, active-event display and conflicting manual assignments.
 - Private native Sheets import/readback verified event targets, ordered schema, ISO text timestamps and Perth timezone. Recovery check-in is the only initial plan item; no personal training history was fabricated.
@@ -49,3 +49,12 @@ Live follow-up: Wellness calendar cells were normalised to ISO text, and Wellnes
 - A paginated history backfill imports older list summaries once; their JSON is retained and richer local/cloud records remain intact. Recent detail/FIT import continues. Coverage is saved after the entire activity list is persisted; an incomplete wellness import cannot clear valid activity coverage.
 - Independent review found no new important/critical issues. Preview inspection also found navigation single-line layouts using an unnecessarily wide scrolling layout; constrained single-line layouts now render the labels, with a reproducing test.
 - Debug APK build, Android JSON compatibility and same-signer verification pass. Physical-device upgrade and authenticated 12-week backfill require the athlete's next phone install/sync; credentials are not available in the development environment.
+
+
+## Version 0.3.1 header and sync cleanup
+
+- Banner now reads ENDURANCE COACH. Sync status, warnings, pending-check-in counts, timestamps and manual controls are in Settings only. Today, Plan, Progress and Insights omit the sync header, and Today omits the full-sync button. The Settings dialog updates its current message and timestamps as sync runs. Refresh plan in Settings skips Garmin downloads while sending queued changes.
+- Unchanged successful activity details may be reused for less than 24 hours. Full list-summary comparison ignores object key order but preserves all values/array order. Changed, absent, empty, expired or future-clock entries refetch. Cache timestamps are saved after the activity record; missing FIT streams still retry. This does not bypass wellness imports or the first history backfill.
+- Removed the redundant snapshot-only request after uploads that already return full post-write snapshots. Tests verify one activity batch uses one request instead of two, activity+feedback uses two instead of three, and an idle refresh still fetches one snapshot. Failed requests preserve queued feedback and do not stamp upload hashes.
+- **45 core + 24 Android tests + 8 bridge tests pass (77 total)**. UI tests cover both API 28 and 35; four repository exchange tests cover actual SQLite acknowledgements and request counts. Native Today/large-text previews were inspected. Lint has zero errors; JSON compatibility and the existing debug signer are verified.
+- Independent review found leftover Plan/error retry controls; those were moved/removed with a failing then passing settings-only UI test. No important cache or acknowledgement issue remained. Live phone timing is not measured: Apps Script latency, initial import and recovery requests can still be slow, and the detail cache needs its first successful fill.

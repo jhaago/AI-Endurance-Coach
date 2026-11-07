@@ -77,21 +77,33 @@ public class InterfaceTest {
             update.setAccessible(true);
             String failure = "Synthetic training database error: please retry this sync when connected";
             update.invoke(c.get(), failure);
-            clickText(c.get().getWindow().getDecorView(), failure);
+            clickText(c.get().getWindow().getDecorView(), "Settings");
+            clickText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(), "Sync & import details");
             assertTrue(allText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView()).contains(failure));
+            update.invoke(c.get(), "Syncing…");
+            assertTrue(allText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView()).contains("Syncing…"));
         }
     }
 
-    @Test public void diagnosticsMoveToSettingsWhileMissingMeasurementsAndWarningsStayVisible() throws Exception {
+    @Test public void syncControlsAndWarningsAreInSettingsAndAllTabsUseFullBrand() throws Exception {
         try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
             View root = c.get().getWindow().getDecorView();
-            assertTrue(allText(root).contains("Settings → Sync & import details"));
+            for (String tab : new String[]{"Today", "Plan", "Progress", "Insights"}) {
+                clickDescription(root, tab);
+                assertNotNull(findText(root, "ENDURANCE COACH"));
+                assertFalse(allText(root).contains("Recovery data incomplete"));
+                assertNull(findText(root, "Sync Garmin + plan"));
+                assertNull(findText(root, "Refresh plan"));
+            }
             clickDescription(root, "Insights");
             assertTrue(allText(root).contains("— means no measurement"));
             assertFalse(allText(root).contains("Synthetic diagnostic"));
             clickText(root, "Settings");
             clickText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(), "Sync & import details");
             assertTrue(allText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView()).contains("Synthetic diagnostic: HTTP 200"));
+            assertNotNull(findText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(), "Sync Garmin + plan"));
+            assertNotNull(findText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(), "Refresh plan"));
+            assertTrue(allText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView()).contains("Recovery data incomplete"));
         }
     }
 
@@ -161,7 +173,7 @@ public class InterfaceTest {
     @Test public void weeklyGraphLabelsIncompleteImportsWithoutZeroFillingEarlierWeeks() {
         try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
             View root = c.get().getWindow().getDecorView(); clickDescription(root, "Progress");
-            assertNotNull(findText(root, "Imported totals only · sync Garmin to complete history"));
+            assertNotNull(findText(root, "Imported totals only · earlier history may be incomplete"));
             WeeklyDistanceView graph = (WeeklyDistanceView) findType(root, WeeklyDistanceView.class);
             assertTrue(graph.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, null));
             assertTrue(graph.getContentDescription().toString().contains("not imported"));

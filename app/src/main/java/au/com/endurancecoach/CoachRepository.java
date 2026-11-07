@@ -42,14 +42,7 @@ final class CoachRepository implements AutoCloseable {
    String bridge=vault.get("bridge");
    if(!bridge.isEmpty()){
     BridgeClient client=new BridgeClient(transport,bridge,vault.get("secret"));
-    JSONObject local=store.get("local");JSONArray activities=array(local,"activities"),wellness=array(local,"wellness");
-    JSONArray feedback=store.pending("feedback"), matches=store.pending("match");
-    // Small bounded requests fit Apps Script quotas and permit reliable retries after interruptions.
-    uploadChanged(client,"activities",activities,"activity_id",10);
-    uploadChanged(client,"wellness",wellness,"date",3);
-    for(int start=0;start<feedback.length();start+=30)send(client,new JSONObject().put("action","sync").put("feedback",slice(feedback,start,30)));
-    for(int start=0;start<matches.length();start+=30)send(client,new JSONObject().put("action","sync").put("matches",slice(matches,start,30)));
-    send(client,new JSONObject().put("action","snapshot"));
+    syncCloud(client);
     store.put("status",store.get("status").put("cloud_sync",Instant.now().toString()));
    }else warnings.add("Training database not connected; data stays on this phone");
    if(garmin && vault.get("garmin").isEmpty())warnings.add("Garmin key not configured");
@@ -57,15 +50,25 @@ final class CoachRepository implements AutoCloseable {
    store.put("status",store.get("status").put("message",message));return message;
   }finally{SYNC.unlock();}
  }
+ // Each successful upload already returns a full snapshot. An idle refresh still needs one read.
+ void syncCloud(BridgeClient client) throws Exception {
+  JSONObject local=store.get("local");JSONArray feedback=store.pending("feedback"),matches=store.pending("match");
+  int requests=uploadChanged(client,"activities",array(local,"activities"),"activity_id",10)
+    +uploadChanged(client,"wellness",array(local,"wellness"),"date",3);
+  for(int start=0;start<feedback.length();start+=30){send(client,new JSONObject().put("action","sync").put("feedback",slice(feedback,start,30)));requests++;}
+  for(int start=0;start<matches.length();start+=30){send(client,new JSONObject().put("action","sync").put("matches",slice(matches,start,30)));requests++;}
+  if(requests==0)send(client,new JSONObject().put("action","snapshot"));
+ }
  private void send(BridgeClient client,JSONObject request) throws Exception {
   JSONObject result=client.call(request);JSONArray ack=array(result,"ack_feedback");
   store.acceptSnapshot(result.getJSONObject("snapshot"),ack,array(request,"matches"));
  }
  private static JSONArray slice(JSONArray source,int start,int size) throws Exception {JSONArray out=new JSONArray();for(int i=start;i<Math.min(source.length(),start+size);i++)out.put(source.get(i));return out;}
- private void uploadChanged(BridgeClient client,String kind,JSONArray rows,String key,int batchSize) throws Exception {
+ private int uploadChanged(BridgeClient client,String kind,JSONArray rows,String key,int batchSize) throws Exception {
   JSONObject sent=store.get("uploaded:"+kind);JSONArray changed=new JSONArray();
   for(int i=0;i<rows.length();i++){JSONObject row=rows.getJSONObject(i);if(!hash(row.toString().getBytes(StandardCharsets.UTF_8)).equals(sent.optString(row.getString(key))))changed.put(row);}
   for(int start=0;start<changed.length();start+=batchSize){JSONArray batch=slice(changed,start,batchSize);send(client,new JSONObject().put("action","sync").put(kind,batch));for(int i=0;i<batch.length();i++){JSONObject row=batch.getJSONObject(i);sent.put(row.getString(key),hash(row.toString().getBytes(StandardCharsets.UTF_8)));}store.put("uploaded:"+kind,sent);}
+  return (changed.length()+batchSize-1)/batchSize;
  }
  private void importGarmin(List<String> warnings) throws Exception {
   GarminClient client=new GarminClient(transport,vault.get("garmin"),()->System.currentTimeMillis()/1000);
@@ -75,6 +78,7 @@ final class CoachRepository implements AutoCloseable {
   // Include the previous date as a guard around Garmin/account versus UTC midnight boundaries.
   JSONArray list=client.activities(importStart.minusDays(1).toString(),today.toString(),50);
   JSONArray cloudActivities=array(store.get("snapshot"),"activities");
+  JSONObject detailTimes=store.get("activity-detail-times");
   for(int i=0;i<list.length();i++){
    if(Thread.currentThread().isInterrupted())throw new InterruptedException();
    JSONObject raw=list.getJSONObject(i);String id=String.valueOf(raw.get("activityId"));if(!id.matches("[0-9]+"))throw new IOException("Garmin returned an invalid activity reference; retry sync.");
@@ -86,13 +90,17 @@ final class CoachRepository implements AutoCloseable {
     archive("activity-"+id,original.getBytes(StandardCharsets.UTF_8),"json");summary.put("raw_json",original);
     local.put("activities",merge(array(local,"activities"),new JSONArray().put(summary),"activity_id"));store.put("local",local);continue;
    }
-   JSONObject detail=new JSONObject();
-   try{Object response=client.json("/activity-service/activity/"+id);if(response instanceof JSONObject)detail=(JSONObject)response;}catch(IOException e){warnings.add("Activity detail unavailable for "+id);}
+   JSONObject detail=new JSONObject(),previousOriginal=new JSONObject();long fetchedAt=System.currentTimeMillis()/1000;boolean refreshed=false;
+   JSONObject previous=find(array(local,"activities"),"activity_id",id);
+   if(previous!=null)try{previousOriginal=new JSONObject(previous.optString("raw_json","{}"));}catch(Exception invalid){/* Refetch invalid cache entries. */}
+   if(ActivityCache.reusable(raw,previousOriginal,detailTimes.optLong(id,0),fetchedAt))detail=previousOriginal.getJSONObject("detail");
+   else try{Object response=client.json("/activity-service/activity/"+id);if(response instanceof JSONObject){detail=(JSONObject)response;refreshed=detail.length()>0;}}catch(IOException e){warnings.add("Activity detail unavailable for "+id);}
    JSONObject combined=new JSONObject(raw.toString());for(Iterator<String> keys=detail.keys();keys.hasNext();){String k=keys.next();combined.put(k,detail.get(k));}
    JSONObject activity=Metrics.activity(combined);String original=new JSONObject().put("list",raw).put("detail",detail).toString();
    archive("activity-"+id,original.getBytes(StandardCharsets.UTF_8),"json");activity.put("raw_json",original);
    // Persist each activity before a later network failure can interrupt this import.
    local.put("activities",merge(array(local,"activities"),new JSONArray().put(activity),"activity_id"));store.put("local",local);
+   if(refreshed){detailTimes.put(id,fetchedAt);store.put("activity-detail-times",detailTimes);}
    File fit=new File(context.getFilesDir(),"originals/activity-"+id+"-"+hash(original.getBytes(StandardCharsets.UTF_8))+".zip");
    if(!fit.exists())try{
     byte[] bytes=client.get("/download-service/files/activity/"+id);JSONArray samples=FitRecords.decodeZip(bytes,activity.optString("type").contains("running"));
