@@ -54,9 +54,17 @@ function row(name,obj){return HEADERS[name].map(function(k){return safe(obj[k]);
 function append(db,name,obj){sheet(db,name).appendRow(row(name,obj));}
 function find(db,name,key,id){return records(db,name).find(function(r){return String(r[key])===String(id);});}
 function upsert(db,name,key,obj) {
+ if(name==='Wellness')obj=preserveWellness(obj,find(db,'Wellness',key,obj[key]));
  var s=sheet(db,name), rows=s.getDataRange().getValues(), col=HEADERS[name].indexOf(key);
  for(var i=1;i<rows.length;i++)if(String(rows[i][col])===String(obj[key])){s.getRange(i+1,1,1,HEADERS[name].length).setValues([row(name,obj)]);return;}
  s.appendRow(row(name,obj));
+}
+function preserveWellness(fresh,previous) {
+ if(!previous)return fresh;
+ var result=Object.assign({},fresh),retained=false;
+ ['sleep_hours','sleep_score','hrv_ms','resting_hr'].forEach(function(k){if((result[k]===null||result[k]===undefined)&&typeof previous[k]==='number'&&isFinite(previous[k])){result[k]=previous[k];retained=true;}});
+ if(retained)result.coverage_note=(result.coverage_note||'')+'\nPrevious measured values retained where the latest values are unavailable.';
+ return result;
 }
 function validId(value){return (typeof value==='string'||typeof value==='number')&&/^[a-zA-Z0-9_:.\-]{1,100}$/.test(String(value));}
 function validDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&!isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;}

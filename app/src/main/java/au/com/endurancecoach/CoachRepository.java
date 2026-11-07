@@ -35,7 +35,10 @@ final class CoachRepository implements AutoCloseable {
   if(!SYNC.tryLock())return "Sync already in progress";
   try{
    ArrayList<String> warnings=new ArrayList<>();
-   if(garmin && !vault.get("garmin").isEmpty())importGarmin(warnings);
+   if(garmin && !vault.get("garmin").isEmpty()){
+    try{importGarmin(warnings);store.put("status",store.get("status").put("garmin_message",warnings.isEmpty()?"Up to date":String.join(" · ",warnings)));warnings.clear();}
+    catch(Exception e){String error=e instanceof IOException?e.getMessage():"Garmin import incomplete; retry sync";store.put("status",store.get("status").put("garmin_message",error).put("message",error));throw e;}
+   }
    String bridge=vault.get("bridge");
    if(!bridge.isEmpty()){
     BridgeClient client=new BridgeClient(transport,bridge,vault.get("secret"));
@@ -50,7 +53,7 @@ final class CoachRepository implements AutoCloseable {
     store.put("status",store.get("status").put("cloud_sync",Instant.now().toString()));
    }else warnings.add("Training database not connected; data stays on this phone");
    if(garmin && vault.get("garmin").isEmpty())warnings.add("Garmin key not configured");
-   String message=warnings.isEmpty()?"Up to date":String.join(" · ",warnings);
+   String message=SyncStatus.message(store.get("status").optString("garmin_message",""),warnings);
    store.put("status",store.get("status").put("message",message));return message;
   }finally{SYNC.unlock();}
  }
@@ -84,17 +87,29 @@ final class CoachRepository implements AutoCloseable {
     atomic(fit.toPath(),bytes);store.put("samples:"+id,new JSONObject().put("records",samples));
    }catch(Exception e){warnings.add("Original FIT unavailable for "+id+"; will retry");}
   }
-  TreeSet<String> dates=new TreeSet<>();for(LocalDate d=SyncWindow.start(today,last,2,7);!d.isAfter(today);d=d.plusDays(1))dates.add(d.toString());
+  String recoveryLast=array(local,"wellness").length()==0?"":last;
+  TreeSet<String> dates=new TreeSet<>();for(LocalDate d=SyncWindow.start(today,recoveryLast,2,7);!d.isAfter(today);d=d.plusDays(1))dates.add(d.toString());
   JSONArray retryDates=array(store.get("wellness-retry"),"dates");for(int i=0;i<retryDates.length();i++)dates.add(retryDates.getString(i));JSONArray remaining=new JSONArray();
+  RecoveryReader recovery=new RecoveryReader(client);int missingDays=0;
   for(String date:dates){
-   JSONObject old=find(array(local,"wellness"),"date",date);JSONObject raw=old==null?new JSONObject():new JSONObject(old.optString("raw_json","{}"));boolean any=false, retry=false;
+   JSONObject old=find(array(local,"wellness"),"date",date);JSONObject raw=old==null?new JSONObject():new JSONObject(old.optString("raw_json","{}"));boolean retry=false,retained=false;JSONObject notes=new JSONObject(),attempts=new JSONObject();
    for(String kind:new String[]{"sleep","hrv","heart"}){
-    String path=kind.equals("sleep")?"/sleep-service/sleep/dailySleep?date="+date:kind.equals("hrv")?"/hrv-service/hrv/"+date:"/wellness-service/wellness/dailyHeartRate?date="+date;
-    try{Object v=client.json(path);if(v instanceof JSONObject){raw.put(kind,v);any=true;}}catch(IOException e){warnings.add(kind+" unavailable on "+date);if(!(e instanceof Transport.HttpFailure)||((Transport.HttpFailure)e).status!=404)retry=true;}
+    RecoveryReader.Result result=recovery.read(kind,date);notes.put(kind,result.note);attempts.put(kind,result.raw);retry|=result.retry;
+    if(RecoveryReader.measured(kind,result.data))raw.put(kind,result.data);else if(raw.optJSONObject(kind)!=null)retained=true;
    }
    if(retry)remaining.put(date);
-   if(any){JSONObject m=Metrics.wellness(date,raw.optJSONObject("sleep")==null?new JSONObject():raw.getJSONObject("sleep"),raw.optJSONObject("hrv")==null?new JSONObject():raw.getJSONObject("hrv"),raw.optJSONObject("heart")==null?new JSONObject():raw.getJSONObject("heart"));m.put("raw_json",raw.toString());archive("wellness-"+date,raw.toString().getBytes(StandardCharsets.UTF_8),"json");local.put("wellness",merge(array(local,"wellness"),new JSONArray().put(m),"date"));store.put("local",local);}
+   raw.put("latest_attempts",attempts).put("diagnostics",notes);
+   JSONObject fresh=Metrics.wellness(date,raw.optJSONObject("sleep")==null?new JSONObject():raw.getJSONObject("sleep"),raw.optJSONObject("hrv")==null?new JSONObject():raw.getJSONObject("hrv"),raw.optJSONObject("heart")==null?new JSONObject():raw.getJSONObject("heart"));
+   JSONObject cloudKnown=find(array(store.get("snapshot"),"wellness"),"date",date),known=old==null?cloudKnown:RecoveryRecord.merge(old,cloudKnown);
+   JSONObject m=RecoveryRecord.merge(fresh,known);JSONArray retainedFields=m.optJSONArray("retained_fields");raw.remove("retained_values");
+   if(retainedFields!=null){retained=true;JSONObject values=new JSONObject();for(int i=0;i<retainedFields.length();i++){String field=retainedFields.getString(i);values.put(field,m.get(field));}raw.put("retained_values",values);}
+   if(m.isNull("sleep_hours")||m.isNull("hrv_ms")||m.isNull("resting_hr"))missingDays++;
+   String note=notes.getString("sleep")+"\n"+notes.getString("hrv")+"\n"+notes.getString("heart");
+   if(retained)note+="\nPreviously imported values retained where the latest response was unavailable.";
+   m.put("coverage_note",note+"\nWatch removed during work; daytime data may be incomplete.").put("raw_json",raw.toString());
+   archive("wellness-"+date,raw.toString().getBytes(StandardCharsets.UTF_8),"json");local.put("wellness",merge(array(local,"wellness"),new JSONArray().put(m),"date"));store.put("local",local);
   }
+  if(missingDays>0)warnings.add("Recovery data incomplete on "+missingDays+" date(s); see Insights import details");
   store.put("wellness-retry",new JSONObject().put("dates",remaining));
   store.put("status",store.get("status").put("garmin_sync",Instant.now().toString()));
  }

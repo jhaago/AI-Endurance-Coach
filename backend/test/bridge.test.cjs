@@ -36,3 +36,8 @@ test('snapshot includes append-only revisions without accepting plan writes from
 });
 test('null wellness does not become zero and snapshots omit secrets',()=>{const h=harness();const r=h.call({action:'sync',wellness:[{date:'2026-11-10',sleep_hours:null,hrv_ms:null,resting_hr:null}]});assert.equal(r.ok,true);assert.equal(r.snapshot.wellness[0].sleep_hours,null);assert.ok(!JSON.stringify(r).includes('x'.repeat(40)));});
 test('setup verification reads configuration and schema without returning credentials',()=>{const h=harness();const result=h.ctx.verifySetup();assert.equal(result.ok,true);assert.equal(result.plan_revisions,0);assert.ok(!JSON.stringify(result).includes('x'.repeat(40)));});
+test('null diagnostic upload cannot erase same-day measured cloud wellness',()=>{
+ const h=harness();h.call({action:'sync',wellness:[{date:'2026-11-07',sleep_hours:7,sleep_score:80,hrv_ms:44,resting_hr:52}]});
+ const r=h.call({action:'sync',wellness:[{date:'2026-11-07',sleep_hours:null,sleep_score:75,hrv_ms:null,resting_hr:null,coverage_note:'HTTP 204 no data'}]});
+ assert.equal(r.ok,true);const w=r.snapshot.wellness[0];assert.equal(w.sleep_hours,7);assert.equal(w.sleep_score,75);assert.equal(w.hrv_ms,44);assert.equal(w.resting_hr,52);assert.ok(w.coverage_note.includes('retained'));
+});

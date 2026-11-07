@@ -28,21 +28,30 @@ public final class GarminClient {
             token=value;
         } catch(RuntimeException e) { throw new IOException("Garmin returned an invalid access token."); }
     }
-    public synchronized byte[] get(String path) throws IOException {
+    private synchronized Transport.Response response(String path) throws IOException {
         if(!path.startsWith("/") || path.startsWith("//") || path.contains(":") || path.contains("..")) throw new IllegalArgumentException("Invalid Garmin path");
         if(expiresAt-clock.getAsLong()<3600) authenticate();
         for(int attempt=0;attempt<2;attempt++) {
             Map<String,String> h=new HashMap<>(); h.put("Authorization","Bearer "+token); h.put("Accept","*/*");
             Transport.Response r=transport.request("GET",HOST+path,h,null);
             if(r.code==401 && attempt==0) { authenticate(); continue; }
-            r.requireSuccess(); return r.body;
+            r.requireSuccess(); return r;
         }
         throw new IOException("Garmin authorization failed.");
     }
-    public Object json(String path) throws IOException {
-        String text=new String(get(path),StandardCharsets.UTF_8);
-        try { return text.trim().isEmpty()?JSONObject.NULL:new JSONTokener(text).nextValue(); }
+    public byte[] get(String path) throws IOException { return response(path).body; }
+    public static final class JsonResult {
+        public final int status; public final Object value;
+        JsonResult(int status,Object value){this.status=status;this.value=value;}
+        public String shape(){return value==JSONObject.NULL?"no data":value instanceof JSONObject?"object":value instanceof JSONArray?"array":"unexpected value";}
+    }
+    public JsonResult inspectJson(String path) throws IOException {
+        Transport.Response r=response(path);String text=r.text();
+        try {return new JsonResult(r.code,text.trim().isEmpty()?JSONObject.NULL:new JSONTokener(text).nextValue());}
         catch(RuntimeException e){throw new IOException("Garmin returned invalid JSON.");}
+    }
+    public Object json(String path) throws IOException {
+        return inspectJson(path).value;
     }
     public JSONArray activities(String startDate,String endDate,int pageSize) throws IOException {
         LocalDate.parse(startDate); LocalDate.parse(endDate);

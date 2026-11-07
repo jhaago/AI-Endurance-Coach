@@ -2,8 +2,8 @@
 
 ## Executed
 
-- `:core:test`: **24 tests passing**, including authentication/raw JWT/401 renewal, pagination, SI units, official response schema differences, original FIT decoding, null wellness, plan revisions, Perth matching, manual conflicts, event filtering, catch-up windows, bridge plan-refresh/actual separation, and multi-megabyte Unicode-safe storage chunks.
-- `node --test backend/test/*.test.cjs`: **7 tests passing** against an in-memory Apps Script/Sheets/Drive harness, exercising authentication, validation-before-write, activity/archive idempotency, feedback retry/conflicts/formula escaping, revision snapshots and null metrics.
+- `:core:test`: **33 tests passing**, including authentication/raw JWT/401 renewal, pagination, SI units, official response schema differences, original FIT decoding, null wellness, plan revisions, Perth matching, manual conflicts, event filtering, catch-up windows, bridge plan-refresh/actual separation, and multi-megabyte Unicode-safe storage chunks.
+- `node --test backend/test/*.test.cjs`: **8 tests passing** against an in-memory Apps Script/Sheets/Drive harness, exercising authentication, validation-before-write, activity/archive idempotency, feedback retry/conflicts/formula escaping, revision snapshots and null metrics.
 - `:app:assembleDebug`: Android debug APK successfully produced.
 - `:app:lintDebug`: **0 errors, 5 warnings** (English-only strings/localisation and custom View editor-constructor guidance).
 - `scripts/check_android_json.py`: compiled core JSON calls checked against Android API 35's real `android.jar`. This caught and eliminated a desktop-only `JSONObject.keySet()` call.
@@ -12,9 +12,9 @@
 
 ## Not yet verified
 
-- No Android emulator or physical device run was available here. Keystore behaviour, Android SQLite transaction failure injection, UI appearance/accessibility and JobScheduler timing require device acceptance testing.
-- No real Garmin account has been queried. The athlete must obtain a Personal API key and enter it directly into the installed app. Account/device-specific responses and service limits remain a live integration check.
-- Google OAuth is approved and the live Apps Script `verifySetup` check passed: database/schema readable, one event and one plan revision, private archive accessible, secret present and valid length without displaying it. The web app is deployed as version 1; `Anyone` endpoint access was explicitly approved and all data operations require the bridge secret. Live unauthenticated GET returns `Use authenticated POST`, and an incorrect-secret POST returns `Unauthorized`; no data is returned. Authenticated Android-to-bridge POST is not yet verified. Node tests use service doubles.
+- The first physical-device check confirmed Today/Insights rendering, saved connections, cloud plan retrieval and a live import of 14 activities. Android SQLite failure injection, upgrade persistence and JobScheduler timing still require device acceptance testing.
+- Live Garmin activity import is confirmed. Sleep/HRV/resting HR did not appear in the first build, and plan polling hid earlier warnings. Version 0.1.1 preserves Garmin warnings, uses documented same-date sleep/HRV summary fallbacks, and uploads credential-safe HTTP/shape diagnostics with null metrics. Real recovery availability remains unverified until the updated APK syncs.
+- Google OAuth is approved and the live Apps Script `verifySetup` check passed: database/schema readable, one event and one plan revision, private archive accessible, secret present and valid length without displaying it. The web app is deployed as version 1; `Anyone` endpoint access was explicitly approved and all data operations require the bridge secret. Live unauthenticated GET returns `Use authenticated POST`, and an incorrect-secret POST returns `Unauthorized`; no data is returned. Authenticated Android-to-bridge activity uploads are verified. Recovery uploads from 0.1.1 remain a device check. Node tests use service doubles.
 - Pushing structured workouts to Garmin is not implemented by this read-only Personal API.
 - Original FIT files remain on the phone; cloud archives currently retain original JSON. Additional Garmin recovery endpoints, multi-user authentication, release signing and Play Store publication remain future work.
 
@@ -25,3 +25,9 @@
 - Append-only Sheets plan history is enforced by app/bridge write separation and the documented chat workflow; an owner can still edit historical rows directly in Sheets.
 - Keep ambiguous matches unassigned, and only show the active event's current schedule while preserving historical matching.
 - Defer the five lint warnings, full localisation and custom-view layout-editor support. They do not prevent this personal English-language APK from building.
+
+## Version 0.1.1 recovery repair
+
+- Added regression coverage for no-data vs HTTP errors, same-date summary selection, ambiguous daily-minimum HR, empty/partial sleep payloads, retained local/cloud metrics, and warning persistence.
+- A summary resting/minimum value is retained only in original JSON and is never labelled confirmed resting HR. Null diagnostic rows cannot clear measured cloud wellness values.
+- Independent review findings were fixed with regression tests. The update uses the same package and signing certificate as 0.1.0; install as an update to retain saved settings and local records.
