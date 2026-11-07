@@ -6,7 +6,7 @@ Initial programme: Herdy's Frontyard Ultra, **12 March 2027**. Primary **10 yard
 
 ## Current status
 
-- Native Android source, four screens, encrypted connections, original-file archive, background/manual sync, feedback outbox and conservative automatic workout matching.
+- Native Android app with four screens, dark/light/system appearance, encrypted connections, original-file archive, background/manual sync, feedback outbox and conservative automatic workout matching.
 - Garmin client, token renewal, activity pagination, normalization and original FIT decoding covered by synthetic tests.
 - Apps Script bridge and private Sheets ledger support idempotent data upload and append-only plan revisions.
 - **Live activity, plan and recovery import are verified.** Version 0.1.1 retains recovery warnings and provides safe import diagnostics. The Google bridge is deployed, its live configuration check passed, and anonymous or incorrect-secret requests are rejected. No account credentials are included.
@@ -17,7 +17,7 @@ Initial programme: Herdy's Frontyard Ultra, **12 March 2027**. Primary **10 yard
 Requires JDK 17, Android SDK platform 35 and build tools 35.0.0. Android Studio can install these. Set `ANDROID_HOME` or let Android Studio create the ignored `local.properties`.
 
 ```sh
-./gradlew :core:test :app:assembleDebug :app:lintDebug
+./gradlew :core:test :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 node --test backend/test/*.test.cjs
 ```
 
@@ -26,10 +26,12 @@ Install `app/build/outputs/apk/debug/app-debug.apk` on Android 8+. The first deb
 ## Connect
 
 1. Follow [setup](docs/SETUP.md) to deploy the Google Sheets bridge.
-2. Generate a Personal API key in Garmin Connect web account settings; enter it directly into the app's Settings.
-3. Enter the deployed bridge `/exec` URL and its separate random secret in Settings.
+2. Generate a Personal API key in Garmin Connect web account settings; enter it under **Settings → Garmin & training database**.
+3. Enter the deployed bridge `/exec` URL and its separate random secret in the same connection screen.
 4. Tap **Sync Garmin + plan**. Check activity totals against Garmin Connect and then add a test feedback record.
 
 The plan checks for updates when the app opens and every minute while it remains open. Garmin imports run manually and approximately every six hours via Android JobScheduler; Android can defer background work. Garmin data is available only after the watch syncs to Garmin Connect. This is not a live watch sensor connection.
+
+Version 0.2.0 opens in dark mode. Choose **Settings → Appearance** for Light or Follow phone. Daily screens show workouts, activity summaries and recovery measurements; revision explanations are in **Workout details**, and sync timestamps/HTTP diagnostics are in **Settings → Sync & import details**. Tap the status message to open those details directly. Missing measurements remain blank and current warnings remain visible. The native rendering tests use synthetic offline records and write previews to `app/build/ui-previews`.
 
 See [Garmin verification](docs/GARMIN.md), [chat update workflow](docs/CHAT_WORKFLOW.md), [data contract](docs/DATA.md) and [validation and limitations](docs/VALIDATION.md).

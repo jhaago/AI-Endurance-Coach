@@ -1,0 +1,199 @@
+package au.com.endurancecoach;
+
+import android.app.AlertDialog;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
+import au.com.endurancecoach.core.PlanEngine;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.android.controller.ActivityController;
+import org.robolectric.annotation.Config;
+import org.robolectric.annotation.GraphicsMode;
+import org.robolectric.shadows.ShadowAlertDialog;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.time.LocalDate;
+import static org.junit.Assert.*;
+
+/** Synthetic offline UI checks; never authenticate, import or alter the real training database. */
+@RunWith(RobolectricTestRunner.class)
+@Config(sdk = 28, qualifiers = "w393dp-h852dp-xhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+public class InterfaceTest {
+    private Context context;
+    private LocalDate today;
+
+    @Before public void seedOfflineData() throws Exception {
+        context = RuntimeEnvironment.getApplication(); today = LocalDate.now(PlanEngine.ZONE);
+        context.getSharedPreferences("appearance", 0).edit().clear().commit();
+        JSONObject event = new JSONObject().put("event_id", "test-event").put("active", true)
+                .put("name", "Sample endurance event").put("date", today.plusMonths(4).toString());
+        JSONObject workout = new JSONObject().put("workout_id", "test-recovery").put("event_id", "test-event")
+                .put("revision", 1).put("date", today.plusDays(2).toString()).put("type", "recovery")
+                .put("title", "Recovery check-in").put("status", "scheduled").put("duration_min", 0)
+                .put("intensity", "Record soreness and fatigue").put("reason", "Technical revision explanation");
+        JSONObject activity = new JSONObject().put("activity_id", "10001").put("type", "running")
+                .put("name", "Sample run").put("start_utc", today.atTime(2, 0).toInstant(java.time.ZoneOffset.UTC).toString())
+                .put("distance_m", 10000).put("duration_s", JSONObject.NULL);
+        JSONObject wellness = new JSONObject().put("date", today.toString()).put("sleep_hours", JSONObject.NULL)
+                .put("sleep_score", JSONObject.NULL).put("hrv_ms", JSONObject.NULL).put("resting_hr", 57)
+                .put("coverage_note", "Synthetic diagnostic: HTTP 200");
+        try (LocalStore store = new LocalStore(context)) {
+            store.put("snapshot", new JSONObject().put("events", new JSONArray().put(event))
+                    .put("plan", new JSONArray().put(workout)).put("activities", new JSONArray().put(activity))
+                    .put("wellness", new JSONArray().put(wellness)));
+            store.put("status", new JSONObject().put("message", "Recovery data incomplete; see Insights import details"));
+        }
+    }
+
+    @Test public void unavailableActivityDurationDoesNotBecomeZeroMinutes() {
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            View root = c.get().getWindow().getDecorView(); clickDescription(root, "Progress");
+            assertNotNull(findText(root, "10.0 km · —"));
+            clickText(root, "View activity");
+            assertNotNull(findText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(), "10.0 km · —"));
+        }
+    }
+
+    @Test public void futureRecoveryWorkoutDoesNotHideTodaysDailyCheckIn() {
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            assertNotNull(findText(c.get().getWindow().getDecorView(), "Daily check-in"));
+        }
+    }
+
+    @Test public void syncDetailsShowCurrentFailureInsteadOfAnOlderStoredMessage() throws Exception {
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            java.lang.reflect.Method update = MainActivity.class.getDeclaredMethod("updateStatus", String.class);
+            update.setAccessible(true);
+            String failure = "Synthetic training database error: please retry this sync when connected";
+            update.invoke(c.get(), failure);
+            clickText(c.get().getWindow().getDecorView(), failure);
+            assertTrue(allText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView()).contains(failure));
+        }
+    }
+
+    @Test public void diagnosticsMoveToSettingsWhileMissingMeasurementsAndWarningsStayVisible() throws Exception {
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            View root = c.get().getWindow().getDecorView();
+            assertTrue(allText(root).contains("Settings → Sync & import details"));
+            clickDescription(root, "Insights");
+            assertTrue(allText(root).contains("— means no measurement"));
+            assertFalse(allText(root).contains("Synthetic diagnostic"));
+            clickText(root, "Settings");
+            clickText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(), "Sync & import details");
+            assertTrue(allText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView()).contains("Synthetic diagnostic: HTTP 200"));
+        }
+    }
+
+    @Test public void appearanceSelectionPreservesOfflineRecordsAndPendingFeedback() throws Exception {
+        try (CoachRepository repo = new CoachRepository(context)) { repo.feedback("10001", "", 4, 2, 3, "Synthetic check-in"); }
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            clickText(c.get().getWindow().getDecorView(), "Settings");
+            clickText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(), "Dark  ›");
+            AlertDialog appearance = ShadowAlertDialog.getLatestAlertDialog();
+            appearance.getListView().performItemClick(appearance.getListView().getChildAt(1), 1, 1);
+            assertEquals("light", CoachTheme.preference(context));
+        }
+        try (CoachRepository repo = new CoachRepository(context)) {
+            assertEquals(1, repo.store.pending("feedback").length());
+            assertEquals(1, repo.snapshot().getJSONArray("activities").length());
+            assertEquals(1, repo.snapshot().getJSONArray("plan").length());
+        }
+    }
+
+    @Test public void renderAllTabsInDarkAndLight() throws Exception {
+        for (int mode = 0; mode < 2; mode++) {
+            CoachTheme.save(context, mode);
+            try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+                MainActivity activity = c.get(); View root = activity.getWindow().getDecorView();
+                for (String tab : new String[]{"Today", "Plan", "Progress", "Insights"}) {
+                    clickDescription(root, tab);
+                    assertNull(findText(root, "Training data needs attention"));
+                    capture(root, CoachTheme.MODES[mode] + "-" + tab.toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+        }
+    }
+
+    @Test public void followPhoneRespondsToNightAndDayConfiguration() {
+        CoachTheme.save(context, 2);
+        for (boolean night : new boolean[]{true, false}) {
+            RuntimeEnvironment.setQualifiers(night ? "+night" : "+notnight");
+            try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+                android.util.TypedValue value = new android.util.TypedValue();
+                assertTrue(c.get().getTheme().resolveAttribute(android.R.attr.windowLightStatusBar, value, true));
+                assertEquals(!night, value.data != 0);
+            }
+        }
+    }
+
+    @Test @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    public void narrowScreenWithLargeTextKeepsNavigationAndCheckInReachable() throws Exception {
+        RuntimeEnvironment.setFontScale(1.5f);
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            View root = c.get().getWindow().getDecorView(); capture(root, "narrow-large-text", 640, 1280);
+            for (String tab : new String[]{"Today", "Plan", "Progress", "Insights"}) {
+                View navigation = findDescription(root, tab); assertNotNull(navigation);
+                assertTrue(tab, navigation.getWidth() >= 96 && navigation.getHeight() >= 96);
+            }
+            assertEquals(1, ((TextView) findText(root, "Progress")).getLineCount());
+            clickText(root, "Daily check-in");
+            View dialog = ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView();
+            assertNotNull(findText(dialog, "Fatigue · 0"));
+            assertTrue(containsScroll(dialog));
+            assertTrue(ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_POSITIVE).isEnabled());
+        }
+    }
+
+    private void capture(View root, String name) throws Exception {
+        capture(root, name, 786, 1704);
+    }
+    private void capture(View root, String name, int width, int height) throws Exception {
+        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
+        root.layout(0, 0, width, height);
+        Bitmap image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888); root.draw(new Canvas(image));
+        File folder = new File("build/ui-previews"); assertTrue(folder.isDirectory() || folder.mkdirs());
+        try (FileOutputStream out = new FileOutputStream(new File(folder, name + ".png"))) { image.compress(Bitmap.CompressFormat.PNG, 100, out); }
+        image.recycle();
+    }
+    private static boolean containsScroll(View v) {
+        if (v instanceof android.widget.ScrollView) return true;
+        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++)
+            if (containsScroll(((ViewGroup) v).getChildAt(i))) return true;
+        return false;
+    }
+    private static void clickText(View root, String label) { View v = findText(root, label); assertNotNull(label, v); v.performClick(); }
+    private static void clickDescription(View root, String label) {
+        View v = findDescription(root, label); assertNotNull(label, v); v.performClick();
+    }
+    private static View findDescription(View v, String text) {
+        if (text.contentEquals(v.getContentDescription() == null ? "" : v.getContentDescription())) return v;
+        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) {
+            View found = findDescription(((ViewGroup) v).getChildAt(i), text); if (found != null) return found;
+        }
+        return null;
+    }
+    private static View findText(View v, String text) {
+        if (v instanceof TextView && text.contentEquals(((TextView) v).getText())) return v;
+        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) {
+            View found = findText(((ViewGroup) v).getChildAt(i), text); if (found != null) return found;
+        }
+        return null;
+    }
+    private static String allText(View v) {
+        StringBuilder text = new StringBuilder(); if (v instanceof TextView) text.append(((TextView) v).getText()).append('\n');
+        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) text.append(allText(((ViewGroup) v).getChildAt(i)));
+        return text.toString();
+    }
+}

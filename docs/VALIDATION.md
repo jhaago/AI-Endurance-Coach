@@ -5,7 +5,7 @@
 - `:core:test`: **33 tests passing**, including authentication/raw JWT/401 renewal, pagination, SI units, official response schema differences, original FIT decoding, null wellness, plan revisions, Perth matching, manual conflicts, event filtering, catch-up windows, bridge plan-refresh/actual separation, and multi-megabyte Unicode-safe storage chunks.
 - `node --test backend/test/*.test.cjs`: **8 tests passing** against an in-memory Apps Script/Sheets/Drive harness, exercising authentication, validation-before-write, activity/archive idempotency, feedback retry/conflicts/formula escaping, revision snapshots and null metrics.
 - `:app:assembleDebug`: Android debug APK successfully produced.
-- `:app:lintDebug`: **0 errors, 5 warnings** (English-only strings/localisation and custom View editor-constructor guidance).
+- `:app:lintDebug`: **0 errors, 4 warnings** (English-only text, custom View editor-constructor guidance, synchronous credential removal and backup configuration guidance).
 - `scripts/check_android_json.py`: compiled core JSON calls checked against Android API 35's real `android.jar`. This caught and eliminated a desktop-only `JSONObject.keySet()` call.
 - Independent code review completed. Its six important findings were addressed: Android JSON compatibility, bounded SQLite rows, checked persistence failures, offline catch-up, active-event display and conflicting manual assignments.
 - Private native Sheets import/readback verified event targets, ordered schema, ISO text timestamps and Perth timezone. Recovery check-in is the only initial plan item; no personal training history was fabricated.
@@ -24,7 +24,7 @@
 - Keep programme changes under chat review, rather than mutating training automatically from one metric. The app displays evidence and records feedback.
 - Append-only Sheets plan history is enforced by app/bridge write separation and the documented chat workflow; an owner can still edit historical rows directly in Sheets.
 - Keep ambiguous matches unassigned, and only show the active event's current schedule while preserving historical matching.
-- Defer the five lint warnings, full localisation and custom-view layout-editor support. They do not prevent this personal English-language APK from building.
+- Defer the four lint warnings, full localisation and custom-view layout-editor support. They do not prevent this personal English-language APK from building.
 
 ## Version 0.1.1 recovery repair
 
@@ -33,3 +33,11 @@
 - Independent review findings were fixed with regression tests. The update uses the same package and signing certificate as 0.1.0; install as an update to retain saved settings and local records.
 
 Live follow-up: Wellness calendar cells were normalised to ISO text, and Wellness!A2:A1000 is formatted as text to prevent native date coercion from changing upsert keys. Values and diagnostics were read back. A second future Recovery check-in revision was appended through the chat-connected Sheets tools; revision 1 remains unchanged. App display of revision 2 will be confirmed on its next plan refresh.
+
+## Version 0.2.0 interface refresh
+
+- Dark default, selectable Light and Follow phone, matching native dialogs/inputs/charts/system bars, rounded controls and accessible icon navigation. No new runtime dependencies; Robolectric/AndroidX dependencies are test-only.
+- Today prioritises the next workout and a daily check-in. Plan and Progress retain optional/completed/matching states; unavailable activity duration stays blank. Insights presents dated recovery tiles and measured-only trends, including gaps and empty states.
+- Revision explanations moved to workout details; timestamps, credential-safe import diagnostics and data coverage notes moved to Settings. Current warnings remain visible and tapping the status opens its full current message, including an unsaved database error.
+- **8 offline Android UI tests** exercise both themes across all four tabs, appearance-change data/outbox preservation, system day/night selection, narrow screens with 150% text, diagnostic relocation, null activity duration, daily check-in availability for a future recovery workout, and current error details. These use synthetic data and real native-graphics rendering through Robolectric; screenshots are under `app/build/ui-previews`.
+- Independent review found three regressions; each was reproduced by a failing UI test and fixed. Core (33) and bridge (8) tests also pass. Physical-device installation, Android system-bar rendering and a real upgrade with existing encrypted connections remain device acceptance checks. The package ID and debug signing certificate are unchanged.

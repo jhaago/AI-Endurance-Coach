@@ -16,7 +16,7 @@ The development session creates a private training spreadsheet and a private ori
 Generate the secret with a password manager. Do not reuse your Garmin key, place it in a Sheet, send it as a URL query, or commit it.
 
 3. **Deploy → New deployment → Web app**. Execute as **Me**, access **Anyone**. Authorise the script's access to your spreadsheet and original-record folder. Although the endpoint is reachable, every data read and write requires the secret in its HTTPS POST body; `GET` returns no data. Google Workspace policies may prevent this deployment option.
-4. Copy the resulting `/exec` URL into the app's Settings along with the bridge secret.
+4. Copy the resulting `/exec` URL into **Settings → Garmin & training database** in the app, along with the bridge secret.
 5. When changing bridge code later, **Manage deployments → Edit → New version** on the same deployment to preserve the URL. Workout revisions are ordinary data changes and do not require deployment.
 
 The bridge requires Sheets and Drive scopes to archive original source JSON. Do not add general-purpose Apps Script code from an untrusted source to this deployment. This backend is intended for one personal account, not a multi-user service.

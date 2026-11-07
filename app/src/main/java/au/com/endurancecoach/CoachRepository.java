@@ -109,7 +109,7 @@ final class CoachRepository implements AutoCloseable {
    m.put("coverage_note",note+"\nWatch removed during work; daytime data may be incomplete.").put("raw_json",raw.toString());
    archive("wellness-"+date,raw.toString().getBytes(StandardCharsets.UTF_8),"json");local.put("wellness",merge(array(local,"wellness"),new JSONArray().put(m),"date"));store.put("local",local);
   }
-  if(missingDays>0)warnings.add("Recovery data incomplete on "+missingDays+" date(s); see Insights import details");
+  if(missingDays>0)warnings.add("Recovery data incomplete on "+missingDays+" date(s); see Settings → Sync & import details");
   store.put("wellness-retry",new JSONObject().put("dates",remaining));
   store.put("status",store.get("status").put("garmin_sync",Instant.now().toString()));
  }
