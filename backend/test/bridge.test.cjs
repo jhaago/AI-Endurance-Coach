@@ -8,7 +8,7 @@ function harness(){
  const ctx={console, JSON,Date,Math,Map,Set, Error, Utilities:{DigestAlgorithm:{SHA_256:1},Charset:{UTF_8:1},computeDigest:(_,s)=>[...require('node:crypto').createHash('sha256').update(s).digest()],newBlob:(s,m,n)=>({s,m,n})},
  PropertiesService:{getScriptProperties:()=>({getProperty:k=>({BRIDGE_SECRET:'x'.repeat(40),SPREADSHEET_ID:'sheet',ARCHIVE_FOLDER_ID:'folder'})[k]})},
  SpreadsheetApp:{openById:()=>({getSheetByName:name=>tables[name]})},
- DriveApp:{getFolderById:()=>({getFilesByName:name=>({hasNext:()=>files.some(f=>f.n===name)}),createFile:blob=>{files.push(blob);return {getId:()=>String(files.length)};}})},
+ DriveApp:{getFolderById:()=>({getId:()=> 'folder',getFilesByName:name=>({hasNext:()=>files.some(f=>f.n===name)}),createFile:blob=>{files.push(blob);return {getId:()=>String(files.length)};}})},
  LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
  ContentService:{MimeType:{JSON:1},createTextOutput:s=>({setMimeType:()=>({text:s})})}};
  vm.createContext(ctx); vm.runInContext(fs.readFileSync('backend/Code.gs','utf8'),ctx);
@@ -35,3 +35,4 @@ test('snapshot includes append-only revisions without accepting plan writes from
  const result=h.call({action:'snapshot',plan:[]});assert.equal(result.snapshot.plan.length,2);assert.equal(h.tables.Plan.rows.length,3);
 });
 test('null wellness does not become zero and snapshots omit secrets',()=>{const h=harness();const r=h.call({action:'sync',wellness:[{date:'2026-11-10',sleep_hours:null,hrv_ms:null,resting_hr:null}]});assert.equal(r.ok,true);assert.equal(r.snapshot.wellness[0].sleep_hours,null);assert.ok(!JSON.stringify(r).includes('x'.repeat(40)));});
+test('setup verification reads configuration and schema without returning credentials',()=>{const h=harness();const result=h.ctx.verifySetup();assert.equal(result.ok,true);assert.equal(result.plan_revisions,0);assert.ok(!JSON.stringify(result).includes('x'.repeat(40)));});
