@@ -58,3 +58,9 @@ Live follow-up: Wellness calendar cells were normalised to ISO text, and Wellnes
 - Removed the redundant snapshot-only request after uploads that already return full post-write snapshots. Tests verify one activity batch uses one request instead of two, activity+feedback uses two instead of three, and an idle refresh still fetches one snapshot. Failed requests preserve queued feedback and do not stamp upload hashes.
 - **45 core + 24 Android tests + 8 bridge tests pass (77 total)**. UI tests cover both API 28 and 35; four repository exchange tests cover actual SQLite acknowledgements and request counts. Native Today/large-text previews were inspected. Lint has zero errors; JSON compatibility and the existing debug signer are verified.
 - Independent review found leftover Plan/error retry controls; those were moved/removed with a failing then passing settings-only UI test. No important cache or acknowledgement issue remained. Live phone timing is not measured: Apps Script latency, initial import and recovery requests can still be slow, and the detail cache needs its first successful fill.
+
+## Version 0.3.2 workout detail cleanup
+
+- Workout details shows the current date, type, duration, instructions and feedback action. Previous revisions, change reasons and administrative notes are hidden from the app; the database and sync retain the complete revision ledger.
+- Regression coverage uses two stored versions, verifies only the current instructions appear, confirms the feedback action remains, and reads back both stored versions. It failed before the UI removal and passes on API 28/35 afterward.
+- **45 core + 26 Android + 8 bridge tests pass (79 total)**. Debug build, lint (zero errors), Android JSON compatibility and the same signing certificate are verified. Focused review found no important issues. The proposed Health tab remains a design discussion and is not included in this release.

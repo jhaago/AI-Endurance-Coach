@@ -285,19 +285,6 @@ public final class MainActivity extends Activity {
             if (workout.optInt("duration_min") > 0) box.addView(text(workout.optInt("duration_min") + " min", 24, theme.ink, true));
             box.addView(text(workout.optString("intensity", ""), 16, theme.ink, false));
             box.addView(button("Add feedback", () -> feedback("", workout.optString("workout_id")), true));
-            box.addView(text("Plan revisions", 16, theme.ink, true));
-            JSONArray all = CoachRepository.array(repo.snapshot(), "plan"); List<JSONObject> revisions = new ArrayList<>();
-            for (int i = 0; i < all.length(); i++) {
-                JSONObject r = all.getJSONObject(i);
-                if (r.optString("workout_id").equals(workout.optString("workout_id"))) revisions.add(r);
-            }
-            revisions.sort(Comparator.comparingInt((JSONObject r) -> r.optInt("revision")).reversed());
-            for (JSONObject r : revisions) {
-                box.addView(text("Revision " + r.optInt("revision") + " · " + r.optString("date"), 13, theme.accent, true));
-                box.addView(text(r.optString("title") + (r.optInt("duration_min") > 0 ? " · " + r.optInt("duration_min") + " min" : ""), 14, theme.ink, true));
-                if (!r.optString("intensity", "").isEmpty()) box.addView(text(r.optString("intensity"), 14, theme.muted, false));
-                box.addView(text(r.optString("reason", ""), 14, theme.muted, false));
-            }
             showDetails(workout.optString("title", "Workout"), box);
         } catch (Exception e) { toast("Workout details unavailable"); }
     }
@@ -548,7 +535,7 @@ public final class MainActivity extends Activity {
         box.addView(text("Recovery measurements", 17, theme.ink, true));
         box.addView(text("Missing measurements stay blank. Your watch is off at work, so daytime records may be incomplete; gaps do not indicate recovery or inactivity.", 14, theme.muted, false));
         box.addView(text("Your training plan", 17, theme.ink, true));
-        box.addView(text("ChatGPT reviews training history and your check-ins, then updates future workouts in the shared database. Earlier revisions stay in workout details. Planned sessions and actual Garmin activities remain separate.", 14, theme.muted, false));
+        box.addView(text("ChatGPT reviews training history and your check-ins, then updates future workouts in the shared database. Plan history is retained in the database. Planned sessions and actual Garmin activities remain separate.", 14, theme.muted, false));
         box.addView(text("Available Garmin data", 17, theme.ink, true));
         box.addView(text("Sleep, overnight HRV and resting heart rate are shown when supplied by Garmin. No training-readiness or recovery-time score is inferred. Original activity records are retained.", 14, theme.muted, false));
         showDetails("About your data", box);

@@ -71,6 +71,27 @@ public class InterfaceTest {
         }
     }
 
+    @Test public void workoutDetailsShowCurrentInstructionsAndKeepHistoryOutOfTheInterface() throws Exception {
+        try (LocalStore store = new LocalStore(context)) {
+            JSONObject snapshot = store.get("snapshot"); JSONArray plan = snapshot.getJSONArray("plan");
+            plan.put(new JSONObject(plan.getJSONObject(0).toString()).put("revision", 2)
+                    .put("title", "Current session").put("intensity", "Easy mobility only"));
+            store.put("snapshot", snapshot);
+        }
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            clickText(c.get().getWindow().getDecorView(), "Workout details");
+            View dialog = ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView();
+            assertNotNull(findText(dialog, "Easy mobility only"));
+            assertNotNull(findText(dialog, "Add feedback"));
+            assertFalse(allText(dialog).contains("Plan revisions"));
+            assertFalse(allText(dialog).contains("Technical revision explanation"));
+            assertNull(findText(dialog, "Recovery check-in"));
+        }
+        try (LocalStore store = new LocalStore(context)) {
+            assertEquals(2, store.get("snapshot").getJSONArray("plan").length());
+        }
+    }
+
     @Test public void syncDetailsShowCurrentFailureInsteadOfAnOlderStoredMessage() throws Exception {
         try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
             java.lang.reflect.Method update = MainActivity.class.getDeclaredMethod("updateStatus", String.class);
