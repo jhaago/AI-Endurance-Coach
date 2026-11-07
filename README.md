@@ -9,7 +9,7 @@ Initial programme: Herdy's Frontyard Ultra, **12 March 2027**. Primary **10 yard
 - Native Android source, four screens, encrypted connections, original-file archive, background/manual sync, feedback outbox and conservative automatic workout matching.
 - Garmin client, token renewal, activity pagination, normalization and original FIT decoding covered by synthetic tests.
 - Apps Script bridge and private Sheets ledger support idempotent data upload and append-only plan revisions.
-- **Live Garmin account sync and deployed Apps Script connection require your authorisation and have not been verified.** No account credentials are included.
+- **Live Garmin account sync and the first authenticated Android sync remain unverified.** The Google bridge is deployed, its live configuration check passed, and anonymous or incorrect-secret requests are rejected. No account credentials are included.
 - The initial central plan contains a recovery check-in. A full running programme should be set after importing current training and recovery data.
 
 ## Build
