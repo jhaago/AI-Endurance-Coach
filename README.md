@@ -34,4 +34,8 @@ The plan checks for updates when the app opens and every minute while it remains
 
 Version 0.2.0 opens in dark mode. Choose **Settings → Appearance** for Light or Follow phone. Daily screens show workouts, activity summaries and recovery measurements; revision explanations are in **Workout details**, and sync timestamps/HTTP diagnostics are in **Settings → Sync & import details**. Tap the status message to open those details directly. Missing measurements remain blank and current warnings remain visible. The native rendering tests use synthetic offline records and write previews to `app/build/ui-previews`.
 
+Version 0.3.0 adds a selectable **12-week running-distance graph** to Progress, with distance, time and elevation for Monday–Sunday weeks in Perth. The current week is labelled "So far". Tap a point or use the chart's earlier/later accessibility actions. Unknown import periods are gaps; verified empty weeks are zero. An unavailable measurement stays blank rather than undercounting its week's total.
+
+After updating, tap **Sync Garmin + plan** once. A paginated activity-list backfill supplies the 12-week chart history. Older summaries retain their original JSON, and any existing richer activity records are preserved. Recent activities continue to receive detailed JSON and FIT imports; older backfilled summaries do not automatically download FIT streams. Coverage is recorded only after every listed activity has been saved. New plan rows in the shared database need only Refresh plan, without another deployment.
+
 See [Garmin verification](docs/GARMIN.md), [chat update workflow](docs/CHAT_WORKFLOW.md), [data contract](docs/DATA.md) and [validation and limitations](docs/VALIDATION.md).

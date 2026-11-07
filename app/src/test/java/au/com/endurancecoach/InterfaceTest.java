@@ -27,7 +27,7 @@ import static org.junit.Assert.*;
 
 /** Synthetic offline UI checks; never authenticate, import or alter the real training database. */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 28, qualifiers = "w393dp-h852dp-xhdpi")
+@Config(sdk = {28, 35}, qualifiers = "w393dp-h852dp-xhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class InterfaceTest {
     private Context context;
@@ -125,6 +125,49 @@ public class InterfaceTest {
         }
     }
 
+    @Test public void weeklyGraphSelectsHistoryAndRendersBothThemes() throws Exception {
+        LocalDate monday = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+        double[] kilometres = {5, 12, 10, 0, 20, 6, 10, 16, 4, 23, 5, 38};
+        JSONArray activities = new JSONArray();
+        for (int i = 0; i < kilometres.length; i++) if (kilometres[i] > 0) {
+            activities.put(new JSONObject().put("activity_id", "synthetic-" + i).put("type", "running").put("name", "Sample run")
+                    .put("start_utc", monday.minusWeeks(11 - i).atTime(2, 0).toInstant(java.time.ZoneOffset.UTC).toString())
+                    .put("distance_m", kilometres[i] * 1000).put("duration_s", kilometres[i] * 450).put("elevation_m", kilometres[i] * 10));
+        }
+        try (LocalStore store = new LocalStore(context)) {
+            store.put("snapshot", store.get("snapshot").put("activities", activities));
+            store.put("status", store.get("status").put("activity_start", monday.minusWeeks(11).toString()).put("activity_end", today.toString()));
+        }
+        for (int mode = 0; mode < 2; mode++) {
+            CoachTheme.save(context, mode);
+            try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+                View root = c.get().getWindow().getDecorView(); clickDescription(root, "Progress");
+                assertNotNull(findText(root, "38.00 km"));
+                WeeklyDistanceView graph = (WeeklyDistanceView) findType(root, WeeklyDistanceView.class);
+                assertNotNull(graph);
+                assertTrue(graph.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, null));
+                assertNotNull(findText(root, "5.00 km"));
+                assertTrue(graph.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null));
+                assertNotNull(findText(root, "38.00 km"));
+                capture(root, CoachTheme.MODES[mode] + "-weekly-progress");
+                for (String label : new String[]{"Today", "Plan", "Progress", "Insights"}) {
+                    TextView nav = (TextView) findText(findDescription(root, label), label);
+                    assertTrue(label, nav.getLayout().getWidth() <= nav.getWidth());
+                }
+            }
+        }
+    }
+
+    @Test public void weeklyGraphLabelsIncompleteImportsWithoutZeroFillingEarlierWeeks() {
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            View root = c.get().getWindow().getDecorView(); clickDescription(root, "Progress");
+            assertNotNull(findText(root, "Imported totals only · sync Garmin to complete history"));
+            WeeklyDistanceView graph = (WeeklyDistanceView) findType(root, WeeklyDistanceView.class);
+            assertTrue(graph.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD, null));
+            assertTrue(graph.getContentDescription().toString().contains("not imported"));
+        }
+    }
+
     @Test public void followPhoneRespondsToNightAndDayConfiguration() {
         CoachTheme.save(context, 2);
         for (boolean night : new boolean[]{true, false}) {
@@ -146,7 +189,7 @@ public class InterfaceTest {
                 View navigation = findDescription(root, tab); assertNotNull(navigation);
                 assertTrue(tab, navigation.getWidth() >= 96 && navigation.getHeight() >= 96);
             }
-            assertEquals(1, ((TextView) findText(root, "Progress")).getLineCount());
+            assertEquals(1, ((TextView) findText(findDescription(root, "Progress"), "Progress")).getLineCount());
             clickText(root, "Daily check-in");
             View dialog = ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView();
             assertNotNull(findText(dialog, "Fatigue · 0"));
@@ -172,6 +215,13 @@ public class InterfaceTest {
         if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++)
             if (containsScroll(((ViewGroup) v).getChildAt(i))) return true;
         return false;
+    }
+    private static View findType(View v, Class<?> type) {
+        if (type.isInstance(v)) return v;
+        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) {
+            View found = findType(((ViewGroup) v).getChildAt(i), type); if (found != null) return found;
+        }
+        return null;
     }
     private static void clickText(View root, String label) { View v = findText(root, label); assertNotNull(label, v); v.performClick(); }
     private static void clickDescription(View root, String label) {

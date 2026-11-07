@@ -29,6 +29,12 @@ Activity detail's `summaryDTO.averageRunCadence` is documented in **steps/minute
 
 Sleep quality and HRV are nullable and depend on actual device recordings. Removing the watch during work leaves daytime gaps. The app does not invent Garmin Training Readiness, recovery time, training status or training-load values. Additional documented body-battery, stress, daily-summary and oxygen endpoints could be added later. Personal API has no documented workout-publishing route, so pushing the plan to the watch is outside this MVP.
 
+## Weekly chart history (0.3.0)
+
+The first Garmin sync after this update widens the existing paginated activity-list query to the Monday eleven weeks before the current week. One preceding date is included as a guard around account/UTC date boundaries. The chart itself groups recorded start instants in Perth time. Subsequent imports use the existing six-day overlap and offline catch-up window.
+
+Records older than the normal detailed-import window use only the documented list response; its original JSON is archived. Existing local or cloud activity rows are preserved rather than overwritten by a thinner summary. Recent records retain the existing detail/FIT path. Import coverage start/end is committed only after the full list is saved, before the independent wellness phase. A failed or partial import cannot turn older unknown weeks into zeros. Live backfill still requires the athlete's phone/key; no key is used in development tests.
+
 ## Primary sources
 
 - https://developer.garmin.com/gc-developer-program/overview/

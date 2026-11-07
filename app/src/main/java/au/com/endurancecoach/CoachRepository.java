@@ -70,10 +70,22 @@ final class CoachRepository implements AutoCloseable {
  private void importGarmin(List<String> warnings) throws Exception {
   GarminClient client=new GarminClient(transport,vault.get("garmin"),()->System.currentTimeMillis()/1000);
   LocalDate today=LocalDate.now(PlanEngine.ZONE);JSONObject local=store.get("local");String last=store.get("status").optString("garmin_sync","");
-  JSONArray list=client.activities(SyncWindow.start(today,last,6,30).toString(),today.toString(),50);
+  LocalDate detailStart=SyncWindow.start(today,last,6,30);
+  LocalDate importStart=WeeklyProgress.importStart(today,last,store.get("status").optString("activity_start",""));
+  // Include the previous date as a guard around Garmin/account versus UTC midnight boundaries.
+  JSONArray list=client.activities(importStart.minusDays(1).toString(),today.toString(),50);
+  JSONArray cloudActivities=array(store.get("snapshot"),"activities");
   for(int i=0;i<list.length();i++){
    if(Thread.currentThread().isInterrupted())throw new InterruptedException();
-   JSONObject raw=list.getJSONObject(i);String id=String.valueOf(raw.get("activityId"));if(!id.matches("[0-9]+"))continue;
+   JSONObject raw=list.getJSONObject(i);String id=String.valueOf(raw.get("activityId"));if(!id.matches("[0-9]+"))throw new IOException("Garmin returned an invalid activity reference; retry sync.");
+   JSONObject summary=null;try{summary=Metrics.activity(raw);}catch(RuntimeException incomplete){/* Detail may supply fields absent from the list summary. */}
+   if(summary!=null&&LocalDate.parse(PlanEngine.day(summary)).isBefore(detailStart)){
+    // Older chart history needs only the original list summary; preserve any richer existing record.
+    if(find(array(local,"activities"),"activity_id",id)!=null||find(cloudActivities,"activity_id",id)!=null)continue;
+    String original=new JSONObject().put("list",raw).toString();
+    archive("activity-"+id,original.getBytes(StandardCharsets.UTF_8),"json");summary.put("raw_json",original);
+    local.put("activities",merge(array(local,"activities"),new JSONArray().put(summary),"activity_id"));store.put("local",local);continue;
+   }
    JSONObject detail=new JSONObject();
    try{Object response=client.json("/activity-service/activity/"+id);if(response instanceof JSONObject)detail=(JSONObject)response;}catch(IOException e){warnings.add("Activity detail unavailable for "+id);}
    JSONObject combined=new JSONObject(raw.toString());for(Iterator<String> keys=detail.keys();keys.hasNext();){String k=keys.next();combined.put(k,detail.get(k));}
@@ -87,6 +99,10 @@ final class CoachRepository implements AutoCloseable {
     atomic(fit.toPath(),bytes);store.put("samples:"+id,new JSONObject().put("records",samples));
    }catch(Exception e){warnings.add("Original FIT unavailable for "+id+"; will retry");}
   }
+  // Commit coverage only after the complete paginated list has been processed and persisted.
+  JSONObject activityStatus=store.get("status");String oldStart=activityStatus.optString("activity_start","");
+  if(oldStart.isEmpty()||importStart.isBefore(LocalDate.parse(oldStart)))oldStart=importStart.toString();
+  store.put("status",activityStatus.put("activity_start",oldStart).put("activity_end",today.toString()));
   String recoveryLast=array(local,"wellness").length()==0?"":last;
   TreeSet<String> dates=new TreeSet<>();for(LocalDate d=SyncWindow.start(today,recoveryLast,2,7);!d.isAfter(today);d=d.plusDays(1))dates.add(d.toString());
   JSONArray retryDates=array(store.get("wellness-retry"),"dates");for(int i=0;i<retryDates.length();i++)dates.add(retryDates.getString(i));JSONArray remaining=new JSONArray();

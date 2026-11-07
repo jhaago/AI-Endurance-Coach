@@ -28,6 +28,7 @@ public final class MainActivity extends Activity {
     private TextView status;
     private ScrollView screenScroll;
     private int tab;
+    private int progressWeekOffset;
     private LocalDate week;
     private boolean active, busy;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
@@ -45,6 +46,7 @@ public final class MainActivity extends Activity {
         week = today().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         if (state != null) {
             tab = Math.max(0, Math.min(TABS.length - 1, state.getInt("tab", 0)));
+            progressWeekOffset = Math.max(0, Math.min(11, state.getInt("progress_week", 0)));
             week = LocalDate.parse(state.getString("week", week.toString()));
         }
         getWindow().setStatusBarColor(theme.background);
@@ -58,6 +60,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         state.putInt("tab", tab);
+        state.putInt("progress_week", progressWeekOffset);
         state.putString("week", week.toString());
         state.putInt("scroll", screenScroll == null ? 0 : screenScroll.getScrollY());
         super.onSaveInstanceState(state);
@@ -199,7 +202,7 @@ public final class MainActivity extends Activity {
             icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             item.addView(icon, new LinearLayout.LayoutParams(dp(22), dp(22)));
             TextView label = text(TABS[i], 11, current ? theme.accent : theme.muted, current);
-            label.setSingleLine(true); label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            label.setMaxLines(1); label.setEllipsize(android.text.TextUtils.TruncateAt.END);
             label.setGravity(Gravity.CENTER); label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             item.addView(label); item.setContentDescription(TABS[i]); item.setSelected(current);
             item.setFocusable(true); item.setClickable(true);
@@ -318,13 +321,40 @@ public final class MainActivity extends Activity {
     }
     private void progressScreen(JSONObject s) throws Exception {
         List<JSONObject> rows = activities(s); JSONObject matched = matches(s);
-        double km = 0, minutes = 0; int runs = 0; LocalDate from = today().minusDays(6);
-        for (JSONObject a : rows) if (!LocalDate.parse(PlanEngine.day(a)).isBefore(from) && a.optString("type").contains("running")) {
-            km += a.optDouble("distance_m", 0) / 1000; minutes += a.optDouble("duration_s", 0) / 60; runs++;
+        JSONObject syncStatus = repo.store.get("status");
+        List<WeeklyProgress.Week> weeks = WeeklyProgress.weeks(CoachRepository.array(s, "activities"), today(),
+                syncStatus.optString("activity_start", ""), syncStatus.optString("activity_end", ""));
+        LinearLayout totals = card();
+        TextView period = text("", 13, theme.accent, true); totals.addView(period);
+        TextView dates = text("", 12, theme.muted, false); totals.addView(dates);
+        LinearLayout metrics = row(); metrics.setGravity(Gravity.TOP); TextView[] values = new TextView[3];
+        String[] labels = {"Distance", "Time", "Elev gain"};
+        for (int i = 0; i < labels.length; i++) {
+            LinearLayout cell = column(); cell.addView(text(labels[i], 12, theme.muted, false));
+            values[i] = text("—", 20, theme.ink, true); cell.addView(values[i]);
+            metrics.addView(cell, new LinearLayout.LayoutParams(0, -2, 1));
         }
-        LinearLayout totals = card(theme.accentSurface); totals.addView(text("LAST 7 DAYS", 12, theme.accent, true));
-        totals.addView(text(String.format(Locale.UK, "%.1f km", km), 36, theme.ink, true));
-        totals.addView(text(runs + (runs == 1 ? " run · " : " runs · ") + Math.round(minutes) + " min running", 14, theme.muted, false));
+        totals.addView(metrics);
+        TextView count = text("", 12, theme.muted, false); totals.addView(count);
+        totals.addView(text("PAST 12 WEEKS · RUNNING", 12, theme.muted, true));
+        TextView coverage = text("", 12, theme.muted, false);
+        java.util.function.IntConsumer select = index -> {
+            progressWeekOffset = weeks.size() - 1 - index; WeeklyProgress.Week w = weeks.get(index);
+            period.setText(index == weeks.size() - 1 ? "THIS WEEK" : "WEEKLY TOTAL");
+            dates.setText(w.start.format(DateTimeFormatter.ofPattern("d MMM", Locale.UK)) + " – "
+                    + w.start.plusDays(6).format(DateTimeFormatter.ofPattern("d MMM", Locale.UK))
+                    + (index == weeks.size() - 1 ? " · So far" : ""));
+            values[0].setText(w.km == null ? "—" : String.format(Locale.UK, "%.2f km", w.km));
+            values[1].setText(w.seconds == null ? "—" : durationSeconds(w.seconds));
+            values[2].setText(w.elevation == null ? "—" : String.format(Locale.UK, "%.0f m", w.elevation));
+            count.setText(w.runs + (w.runs == 1 ? " recorded run" : " recorded runs"));
+            coverage.setText(!w.covered ? "Imported totals only · sync Garmin to complete history"
+                    : w.km == null || w.seconds == null || w.elevation == null ? "— means a measurement is unavailable"
+                    : "Tap a week to view its totals · Mon–Sun");
+        };
+        int selected = weeks.size() - 1 - progressWeekOffset; select.accept(selected);
+        totals.addView(new WeeklyDistanceView(this, weeks, selected, theme, select), new LinearLayout.LayoutParams(-1, dp(200)));
+        totals.addView(coverage);
         section("ACTIVITY HISTORY");
         if (rows.isEmpty()) notice("Sync Garmin to see your completed activities.");
         for (int i = 0; i < Math.min(100, rows.size()); i++) {
@@ -573,6 +603,9 @@ public final class MainActivity extends Activity {
     private String duration(JSONObject activity) {
         double seconds = activity.optDouble("duration_s", Double.NaN);
         if (!Double.isFinite(seconds) || seconds < 0) return "—";
+        return durationSeconds(seconds);
+    }
+    private String durationSeconds(double seconds) {
         long minutes = Math.round(seconds / 60); return minutes >= 60 ? minutes / 60 + "h " + minutes % 60 + "m" : minutes + " min";
     }
     private String dayLabel(String iso) {
