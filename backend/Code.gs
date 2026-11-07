@@ -88,3 +88,14 @@ function snapshot(db) {
  var activities=records(db,'Activities').sort(function(a,b){return String(b.start_utc).localeCompare(String(a.start_utc));}).slice(0,500);
  return {events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:records(db,'Wellness').sort(function(a,b){return String(b.date).localeCompare(String(a.date));}).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),server_time:new Date().toISOString()};
 }
+
+// Run once from the editor after authorisation. Only counts are logged; never credentials or health records.
+function verifySetup() {
+ var props=PropertiesService.getScriptProperties(), secret=props.getProperty('BRIDGE_SECRET');
+ if(!secret || secret.length<32)throw Error('Set BRIDGE_SECRET to at least 32 characters in Script Properties.');
+ var db=SpreadsheetApp.openById(props.getProperty('SPREADSHEET_ID'));
+ Object.keys(HEADERS).forEach(function(name){sheet(db,name);});
+ var ready=!!DriveApp.getFolderById(props.getProperty('ARCHIVE_FOLDER_ID')).getId();
+ var result={ok:ready,events:records(db,'Events').length,plan_revisions:records(db,'Plan').length,archive_ready:ready};
+ console.log(JSON.stringify(result));return result;
+}
