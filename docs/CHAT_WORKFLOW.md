@@ -21,3 +21,5 @@ When setting a programme, read the latest actual weekly volume rather than treat
 
 
 Nutrition targets are managed in the normal Coach conversation through writable Google Sheets tools. Use [the nutrition handover](NUTRITION_COACH_HANDOVER.md). The app does not calculate or edit calorie targets; food and weight stay in the separate Health actuals ledger.
+
+For the event outlook on Today, follow [the event outlook handover](EVENT_OUTLOOK_HANDOVER.md). Read the full recent training history and current event targets before updating the active `Events` row. Write both goal estimates, the Perth assessment date, evidence quality and a concise rationale together. These are Coach judgements, not calibrated statistical forecasts; do not make them artificially optimistic or revise them because of one isolated workout. Leave the fields blank rather than invent an estimate when the record is insufficient. The app displays them after its next successful sync.
