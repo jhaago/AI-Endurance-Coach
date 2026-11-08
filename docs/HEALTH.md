@@ -6,7 +6,7 @@ Coach-approved targets and phone-recorded actuals are separate. `NutritionTarget
 
 Diary offers date selection, logged calories/target/remaining/progress, training type, breakfast/lunch/dinner/snacks/other, multiple editable meals, favourites (one portion or custom portions), recent copies, and historical correction. Future dates display targets but disable actual logging. Missing intake is unknown; an explicitly logged zero-calorie meal is zero. Calories remaining can be negative after exceeding a target. No exercise adjustment occurs.
 
-Weight offers quick daily entry, latest weight, date-specific history/correction/removal, 30/90-day measured charts, and trailing seven-day average with the number of measured days. Missing days are not filled with zero. One current measurement per Perth date, with edit history retained. Weight goals are read-only from Coach targets; an old Health goal is shown only when the authoritative target has none.
+Weight offers quick daily entry, latest weight, date-specific history/correction/removal, 30/90-day measured charts, and trailing seven-day average with the number of measured days. Missing days are not filled with zero. One current measurement per Perth date, with edit history retained. Weight goals are read-only from approved Coach targets in `NutritionTargets`; legacy Health-record goals are ignored.
 
 Each Health edit/deletion has a new UUID change_id, stable record_id and UTC millisecond timestamp. Current state is maximum parsed timestamp, then lexical change_id. Deleted records remain available so stale deliveries cannot resurrect entries. Same ID/same payload retries are idempotent; conflicting payloads fail. Weight IDs are weight:YYYY-MM-DD; legacy goal ID goal-weight.
 
