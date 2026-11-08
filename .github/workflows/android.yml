@@ -1,10 +1,16 @@
 name: Android MVP
 on: [push, pull_request, workflow_dispatch]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   verify:
+    # Same-repository PRs already have a push build. Fork PRs still receive checks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -25,13 +31,13 @@ jobs:
       - name: Test and lint
         run: ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug
       - name: Build debug APK
-        if: always()
+        if: ${{ !cancelled() }}
         run: ./gradlew :app:assembleDebug
       - name: Check Android JSON API compatibility
-        if: always()
+        if: ${{ !cancelled() }}
         run: python3 scripts/check_android_json.py
       - name: Upload Android build
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: endurance-coach-0.6.1-debug
@@ -43,6 +49,7 @@ jobs:
        github.ref == 'refs/heads/feat/health-meals-preview' &&
        startsWith(github.event.head_commit.message, 'release:'))
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
