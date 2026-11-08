@@ -285,15 +285,21 @@ public final class MainActivity extends Activity {
         return !LocalDate.parse(workout.optString("date")).isAfter(today());
     }
     private void todayScreen(JSONObject s) throws Exception {
-        JSONArray plan = plan(s); Map<String, WorkoutCompletion.Result> outcomes = completions(s, plan); JSONObject next = null;
+        JSONArray plan = plan(s); Map<String, WorkoutCompletion.Result> outcomes = completions(s, plan);
+        JSONObject todayWorkout = null, next = null;
         for (int i = 0; i < plan.length(); i++) {
             JSONObject w = plan.getJSONObject(i);
-            WorkoutCompletion.Result result = outcomes.get(w.getString("workout_id"));
-            if (!LocalDate.parse(w.getString("date")).isBefore(today()) && !result.completed && !result.skipped) { next = w; break; }
+            if (LocalDate.parse(w.getString("date")).equals(today())) { todayWorkout = w; break; }
         }
-        section("NEXT UP");
-        if (next == null) notice("No upcoming workout. Your next session will appear when the plan is updated.");
-        else workout(next, outcomes.get(next.getString("workout_id")), true);
+        if (todayWorkout == null) for (int i = 0; i < plan.length(); i++) {
+            JSONObject w = plan.getJSONObject(i); LocalDate date = LocalDate.parse(w.getString("date"));
+            WorkoutCompletion.Result result = outcomes.get(w.getString("workout_id"));
+            if (date.isAfter(today()) && !result.completed && !result.skipped) { next = w; break; }
+        }
+        JSONObject display = todayWorkout != null ? todayWorkout : next;
+        section(todayWorkout != null ? "TODAY'S SESSION" : "NEXT UP");
+        if (display == null) notice("No upcoming workout. Your next session will appear when the plan is updated.");
+        else workout(display, outcomes.get(display.getString("workout_id")), true);
         content.addView(button("Daily check-in", () -> feedback("", "checkin-" + today()), true));
         JSONObject event = event(s);
         if (event.has("event_id")) {
@@ -338,6 +344,11 @@ public final class MainActivity extends Activity {
     }
     private void workout(JSONObject w, WorkoutCompletion.Result result, boolean featured) throws Exception {
         LinearLayout c = card(featured ? theme.accentSurface : theme.surface);
+        if (result.completed) {
+            GradientDrawable done = shape(featured ? theme.accentSurface : theme.surface, 22, false);
+            done.setStroke(dp(2), Color.parseColor(theme.dark ? "#9BE7B5" : "#77BF91"));
+            c.setBackground(done);
+        }
         String meta = dayLabel(w.getString("date")) + " · " + typeLabel(w.getString("type"))
                 + (w.optBoolean("optional") ? " · Optional" : "");
         c.addView(text(meta, 12, theme.accent, true));
@@ -563,14 +574,14 @@ public final class MainActivity extends Activity {
                     + "\nElevation gain " + value(a, "elevation_m", 1, " m") + "\nCadence " + value(a, "cadence_spm", 1, " steps/min"), 16, theme.ink, false));
             JSONArray samples = CoachRepository.array(repo.store.get("samples:" + id), "records");
             String[] metrics = {"hr", "pace_s_km", "elevation_m", "cadence_spm"};
-            String[] titles = {"Heart rate · bpm", "Pace · seconds/km", "Elevation · m", "Cadence · steps/min"};
+            String[] titles = {"Heart rate · bpm", "Pace · min/km", "Elevation · m", "Cadence · steps/min"};
             if (samples.length() > 0) for (int k = 0; k < metrics.length; k++) {
                 List<Double> points = new ArrayList<>(); int stride = Math.max(1, samples.length() / 250);
                 for (int i = 0; i < samples.length(); i += stride) {
                     JSONObject r = samples.getJSONObject(i); points.add(r.isNull(metrics[k]) ? null : r.optDouble(metrics[k]));
                 }
                 box.addView(text(titles[k], 13, theme.accent, true));
-                box.addView(new TrendView(this, points, theme.accent, theme.muted, theme.outline), new LinearLayout.LayoutParams(-1, dp(100)));
+                box.addView(new TrendView(this, points, theme.accent, theme.muted, theme.outline, metrics[k].equals("pace_s_km")), new LinearLayout.LayoutParams(-1, dp(100)));
             }
             JSONObject matched = matches(repo.snapshot()); String matchedId = matched.optString(id);
             String matchName = "No workout match"; JSONArray p = plan(repo.snapshot());
