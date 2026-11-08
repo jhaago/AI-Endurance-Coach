@@ -10,14 +10,23 @@ final class TrendView extends View {
     private final List<Double> points;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int accent, muted, grid;
+    private final boolean pacePerKm;
     TrendView(Context context, List<Double> points, int accent, int muted, int grid) {
-        super(context); this.points = points; this.accent = accent; this.muted = muted; this.grid = grid;
+        this(context, points, accent, muted, grid, false);
+    }
+    TrendView(Context context, List<Double> points, int accent, int muted, int grid, boolean pacePerKm) {
+        super(context); this.points = points; this.accent = accent; this.muted = muted; this.grid = grid; this.pacePerKm = pacePerKm;
         int measured = 0; Double latest = null;
         for (Double v : points) if (v != null && Double.isFinite(v)) { measured++; latest = v; }
         setContentDescription(measured == 0 ? "No measurements available"
-                : measured + " measured points. Latest measured value " + String.format(Locale.UK, "%.1f", latest)
-                + ". Missing values shown as gaps.");
+                : measured + " measured points. Latest measured value " + formatValue(latest)
+                + (pacePerKm ? " min/km" : "") + ". Missing values shown as gaps.");
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
+    }
+    private String formatValue(double value) {
+        if (!pacePerKm) return String.format(Locale.UK, "%.1f", value);
+        long seconds = Math.round(value);
+        return seconds / 60 + ":" + String.format(Locale.UK, "%02d", seconds % 60);
     }
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -30,7 +39,7 @@ final class TrendView extends View {
             paint.setColor(muted); canvas.drawText("No measurements", 0, getHeight() / 2f, paint); return;
         }
         if (max - min < 1) { min -= .5; max += .5; }
-        String low = String.format(Locale.UK, "%.1f", min), high = String.format(Locale.UK, "%.1f", max);
+        String low = formatValue(min), high = formatValue(max);
         float left = Math.max(paint.measureText(low), paint.measureText(high)) + 12 * density;
         float top = 14 * density, bottom = getHeight() - 12 * density;
         float width = Math.max(1, getWidth() - left - 6 * density), height = Math.max(1, bottom - top);
