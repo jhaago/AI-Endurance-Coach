@@ -39,10 +39,20 @@ final class HealthScreen {
   target=NutritionTargets.forDay(repo.nutritionTargets(),day,plan);HealthRecords.Summary summary=HealthRecords.summary(records,day);
   boolean weight="weight".equals(preferences().getString("section","diary"));
   buttons(parent,choice("Diary",!weight,()->section("diary")),choice("Weight",weight,()->section("weight")));
-  parent.addView(button(day.format(DateTimeFormatter.ofPattern("EEE d MMM yyyy",Locale.UK))+" · Change day",this::pickDay));
   String error=repo.nutritionError();if(!error.isEmpty())parent.addView(text(target==null?"Nutrition targets unavailable. Sync again when connected.":"Nutrition targets may be out of date. Sync again when connected.",14,false));
   if(future())parent.addView(text("Future day · targets only. Log food and weight on today or an earlier date.",14,false));
-  if(weight)weight(parent,summary);else diary(parent,summary,plan);
+  if(weight)weight(parent,summary);else{dayNavigation(parent);diary(parent,summary,plan);}
+ }
+ private void dayNavigation(LinearLayout parent){
+  LocalDate today=LocalDate.now(PlanEngine.ZONE);String label=day.equals(today)?"Today · "+day.format(DateTimeFormatter.ofPattern("EEE d MMM",Locale.UK)):day.format(DateTimeFormatter.ofPattern(day.getYear()==today.getYear()?"EEE d MMM":"EEE d MMM yyyy",Locale.UK));
+  LinearLayout row=new LinearLayout(activity);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+  Button previous=button("‹",()->selectDay.accept(day.minusDays(1)));previous.setContentDescription("Previous day");previous.setTextSize(22);
+  Button selected=button(label,this::pickDay);selected.setContentDescription("Choose date: "+label);
+  Button next=button("›",()->selectDay.accept(day.plusDays(1)));next.setContentDescription("Next day");next.setTextSize(22);
+  LinearLayout.LayoutParams side=new LinearLayout.LayoutParams(dp(52),dp(44));side.setMargins(0,dp(3),dp(4),dp(3));row.addView(previous,side);
+  LinearLayout.LayoutParams middle=new LinearLayout.LayoutParams(0,dp(44),1);middle.setMargins(dp(2),dp(3),dp(2),dp(3));row.addView(selected,middle);
+  LinearLayout.LayoutParams end=new LinearLayout.LayoutParams(dp(52),dp(44));end.setMargins(dp(4),dp(3),0,dp(3));row.addView(next,end);
+  parent.addView(row);
  }
  private void section(String section){preferences().edit().putString("section",section).apply();selectDay.accept(day);}
  private void diary(LinearLayout parent,HealthRecords.Summary summary,JSONArray plan){
