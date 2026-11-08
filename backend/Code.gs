@@ -1,6 +1,6 @@
 /* Single-user bridge. Credentials belong ONLY in Script Properties. Never in this source. */
 var HEADERS = {
-  Events: ['event_id','name','date','primary_yards','primary_km','stretch_yards','stretch_km','runs_per_week','optional_fourth','timezone','active'],
+  Events: ['event_id','name','date','primary_yards','primary_km','stretch_yards','stretch_km','runs_per_week','optional_fourth','timezone','active','primary_confidence_pct','stretch_confidence_pct','confidence_as_of','confidence_quality','confidence_reason'],
   Plan: ['workout_id','revision','event_id','date','type','title','duration_min','intensity','optional','status','author','created_at','reason'],
   Activities: ['activity_id','name','start_utc','type','distance_m','duration_s','pace_s_km','average_hr','elevation_m','cadence_spm','source_hash','updated_at'],
   Wellness: ['date','sleep_hours','sleep_score','hrv_ms','resting_hr','coverage_note','source_hash','updated_at'],
@@ -12,7 +12,7 @@ var HEADERS = {
   NutritionTargets: ['target_id','revision','scope','date','calories_kcal','protein_g','carbohydrate_g','fat_g','weight_goal_kg','weight_goal_date','weight_change_kg_per_week','training_type','exercise_included','source','created_at','reason','status']
 };
 
-function doGet() { return output({ok:false,error:'Use authenticated POST',bridge_version:'0.5.0'}); }
+function doGet() { return output({ok:false,error:'Use authenticated POST',bridge_version:'0.6.0'}); }
 function output(value) {return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);}
 function doPost(e) {
   var lock=null;
@@ -55,7 +55,7 @@ function records(db,name) {
  return values.slice(1).filter(function(r){return r[0]!=='';}).map(function(r){return recordFromRow(name,r,db);});
 }
 function recordFromRow(name,r,db) {
- var obj={};HEADERS[name].forEach(function(k,i){var v=r[i];obj[k]=(v===''||v===undefined)?null:(k==='date'||k==='weight_goal_date')?calendarDay(v,db):v instanceof Date?v.toISOString():v;});return obj;
+ var obj={};HEADERS[name].forEach(function(k,i){var v=r[i];obj[k]=(v===''||v===undefined)?null:(k==='date'||k==='weight_goal_date'||k==='confidence_as_of')?calendarDay(v,db):v instanceof Date?v.toISOString():v;});return obj;
 }
 function calendarDay(value,db) {
  if(value instanceof Date)return Utilities.formatDate(value,db.getSpreadsheetTimeZone(),'yyyy-MM-dd');
@@ -63,7 +63,7 @@ function calendarDay(value,db) {
  return value;
 }
 function safe(value){if(value===null||value===undefined)return '';if(typeof value==='string'&&/^[=+@\-]/.test(value))return "'"+value;return value;}
-function row(name,obj){return HEADERS[name].map(function(k){return (k==='date'||k==='weight_goal_date')&&validDate(obj[k])?"'"+obj[k]:safe(obj[k]);});}
+function row(name,obj){return HEADERS[name].map(function(k){return (k==='date'||k==='weight_goal_date'||k==='confidence_as_of')&&validDate(obj[k])?"'"+obj[k]:safe(obj[k]);});}
 function append(db,name,obj){sheet(db,name).appendRow(row(name,obj));}
 function find(db,name,key,id){return (name==='Wellness'?currentWellness(db):records(db,name)).find(function(r){return String(r[key])===String(id);});}
 function upsert(db,name,key,obj) {
@@ -227,7 +227,7 @@ function archive(db,props,id,json) {
 }
 function snapshot(db) {
  var activities=records(db,'Activities').sort(function(a,b){return String(b.start_utc).localeCompare(String(a.start_utc));}).slice(0,500);
- var result={bridge_version:'0.5.0',health_schema_version:2,events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:currentWellness(db).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),workout_status:currentChanges(workoutStatusRecords(db),'workout_id'),server_time:new Date().toISOString()};
+ var result={bridge_version:'0.6.0',health_schema_version:2,events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:currentWellness(db).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),workout_status:currentChanges(workoutStatusRecords(db),'workout_id'),server_time:new Date().toISOString()};
  try {result.nutrition_targets=nutritionTargets(db);}catch(err){result.nutrition_error='Nutrition targets unavailable; ask your coach to check setup';}
  return result;
 }
