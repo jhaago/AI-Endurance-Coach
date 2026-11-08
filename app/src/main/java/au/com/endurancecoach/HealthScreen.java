@@ -93,9 +93,9 @@ final class HealthScreen {
   LinearLayout box=card(parent);box.addView(text("Latest weight",14,false));box.addView(text(amount(summary.latestWeight,"kg"),30,true));if(summary.latestWeight!=null)box.addView(text(summary.latestWeightDate,13,false));
   box.addView(actualButton(summary.weight==null?"Log weight":"Edit weight",()->weightForm(day)));
   box.addView(text("7-day measured average · "+amount(summary.averageWeight,"kg"),16,true));box.addView(text(summary.weighIns+" weigh-in"+(summary.weighIns==1?"":"s")+" in 7 days",13,false));
-  Double goal=target!=null&&target.weightGoalKg!=null?target.weightGoalKg:summary.goal;
-  box.addView(text(goal==null?"No weight goal":"Weight goal · "+amount(goal,"kg"),16,true));
-  if(goal!=null){box.addView(text(target!=null&&target.weightGoalKg!=null?"Coach-managed weight goal":"Previously saved weight goal",13,false));if(target!=null&&target.weightGoalKg!=null&&!target.weightGoalDate.isEmpty())box.addView(text("Goal date · "+target.weightGoalDate,13,false));}
+  Double goal=target==null?null:target.weightGoalKg;
+  box.addView(text(goal==null?"No weight goal set in Sheets":"Weight goal · "+amount(goal,"kg"),16,true));
+  if(goal!=null){box.addView(text("Coach-managed weight goal",13,false));if(!target.weightGoalDate.isEmpty())box.addView(text("Goal date · "+target.weightGoalDate,13,false));}
   if(target!=null&&target.weightChangeKgPerWeek!=null)box.addView(text(String.format(Locale.UK,"Coach target change · %+.2f kg/week",target.weightChangeKgPerWeek),14,false));
   LinearLayout graph=card(parent);int stored=preferences().getInt("weight-range",30);int range=stored==90?90:30;
   buttons(graph,choice("30 days",range==30,()->range(30)),choice("90 days",range==90,()->range(90)));chart(graph,range);
