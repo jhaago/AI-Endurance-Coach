@@ -190,4 +190,4 @@ test('NutritionTargets ignores completely blank rows and remains unset with a va
  const h=harness();h.tables.NutritionTargets.rows.push(Array(17).fill(''));const r=h.call({action:'snapshot'});assert.deepEqual(r.snapshot.nutrition_targets,[]);assert.ok(!('nutrition_error' in r.snapshot));
 });
 
-test('snapshot advertises extended Health schema before any phone upload',()=>{const h=harness();const r=h.call({action:'snapshot'});assert.equal(r.snapshot.health_schema_version,2);assert.equal(r.snapshot.bridge_version,'0.5.0');});
+test('snapshot advertises extended Health schema before any phone upload',()=>{const h=harness();const r=h.call({action:'snapshot'});assert.equal(r.snapshot.health_schema_version,2);assert.equal(r.snapshot.bridge_version,'0.6.0');});
