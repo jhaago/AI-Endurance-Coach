@@ -289,7 +289,7 @@ public final class MainActivity extends Activity {
         JSONObject todayWorkout = null, next = null;
         for (int i = 0; i < plan.length(); i++) {
             JSONObject w = plan.getJSONObject(i);
-            if (LocalDate.parse(w.getString("date")).equals(today())) { todayWorkout = w; break; }
+            if (LocalDate.parse(w.getString("date")).equals(today()) && !outcomes.get(w.getString("workout_id")).skipped) { todayWorkout = w; break; }
         }
         if (todayWorkout == null) for (int i = 0; i < plan.length(); i++) {
             JSONObject w = plan.getJSONObject(i); LocalDate date = LocalDate.parse(w.getString("date"));

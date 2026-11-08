@@ -63,7 +63,11 @@ public class CompletionUiTest {
         for (int i = 0; i < seconds.length; i++) {
             save(new JSONArray().put(workout("session", today, "Synthetic session", "run", 30)), new JSONArray().put(activity(seconds[i])), new JSONArray());
             try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
-                View root = c.get().getWindow().getDecorView(); clickDescription(root, "Plan");
+                View root = c.get().getWindow().getDecorView();
+                assertNotNull(findText(root, "Synthetic session"));
+                assertNotNull(findText(root, labels[i]));
+                assertNotNull(findText(root, actuals[i]));
+                clickDescription(root, "Plan");
                 assertNotNull(findText(root, labels[i])); assertNotNull(findText(root, "Planned · 30 min")); assertNotNull(findText(root, actuals[i]));
                 assertNull(findText(root, "Actual · 0 min"));
                 clickText(root, "Workout details"); View details = dialog().getWindow().getDecorView();
