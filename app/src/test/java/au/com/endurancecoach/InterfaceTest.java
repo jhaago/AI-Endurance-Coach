@@ -231,6 +231,77 @@ public class InterfaceTest {
         }
     }
 
+    @Test public void healthMealFavouriteQuickAddAndWeightPersist() throws Exception {
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            View root=c.get().getWindow().getDecorView(); clickDescription(root,"Health");
+            clickText(root,"Add meal"); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog(); View form=dialog.getWindow().getDecorView();
+            ((android.widget.EditText)findDescription(form,"Meal name")).setText("Porridge");
+            ((android.widget.EditText)findDescription(form,"Calories per portion (kcal)")).setText("400");
+            ((android.widget.EditText)findDescription(form,"Portions")).setText("1.5");
+            ((android.widget.CheckBox)findText(form,"Save as favourite")).setChecked(true);
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); assertFalse(dialog.isShowing());
+            assertNotNull(findText(root,"600 kcal")); clickText(root,"Quick add");
+            clickText(ShadowAlertDialog.getLatestAlertDialog().getWindow().getDecorView(),"Add 1 portion · Porridge");assertNotNull(findText(root,"1000 kcal"));
+            clickText(root,"Weight");
+            clickText(root,"Log weight"); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); dialog=ShadowAlertDialog.getLatestAlertDialog();form=dialog.getWindow().getDecorView();
+            ((android.widget.EditText)findDescription(form,"Weight (kg)")).setText("98.5");dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+            assertNotNull(findText(root,"98.5 kg"));
+        }
+        try(CoachRepository repo=new CoachRepository(context)){assertEquals(4,repo.healthRecords().length());assertEquals(4,repo.store.pending("health").length());}
+    }
+
+    @Test public void removingWeightClosesTheStaleEditFormAndGoalRemainsReadOnly() throws Exception {
+        try(CoachRepository repo=new CoachRepository(context)){long now=System.currentTimeMillis();repo.saveHealth(new JSONArray().put(au.com.endurancecoach.core.HealthRecords.weight(today,98,null,now)).put(au.com.endurancecoach.core.HealthRecords.goal(85,null,now)));}
+        try(ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).create()){
+            View root=c.get().getWindow().getDecorView();clickDescription(root,"Health");clickText(root,"Weight");
+            assertNotNull(findText(root,"Weight goal · 85.0 kg"));assertNull(findText(root,"Set goal weight"));
+            clickText(root,"Edit weight");org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            AlertDialog edit=ShadowAlertDialog.getLatestAlertDialog();clickText(edit.getWindow().getDecorView(),"Remove weight");
+            ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick();org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertFalse(edit.isShowing());
+            try(CoachRepository repo=new CoachRepository(context)){JSONArray current=repo.healthRecords();for(int i=0;i<current.length();i++)if(("weight:"+today).equals(current.getJSONObject(i).getString("record_id")))assertTrue(current.getJSONObject(i).getBoolean("deleted"));}
+        }
+    }
+
+    @Test public void healthInvalidMealStaysOpenAndDoesNotSave() throws Exception {
+        try (ActivityController<MainActivity> c = Robolectric.buildActivity(MainActivity.class).create()) {
+            View root=c.get().getWindow().getDecorView();clickDescription(root,"Health");clickText(root,"Add meal"); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
+            AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();assertTrue(dialog.isShowing());
+            try(CoachRepository repo=new CoachRepository(context)){assertEquals(0,repo.healthRecords().length());}
+        }
+    }
+
+    @Test @Config(qualifiers="w320dp-h640dp-xhdpi")
+    public void healthHasReadableNavigationAndNativeChartsInBothThemes() throws Exception {
+        try(CoachRepository repo=new CoachRepository(context)){
+            long now=System.currentTimeMillis(); JSONArray records=new JSONArray();
+            for(int i=13;i>=0;i--){LocalDate date=today.minusDays(i);if(i%3!=0)records.put(au.com.endurancecoach.core.HealthRecords.weight(date,100-i*.1,null,now));
+                if(i%4!=0)records.put(au.com.endurancecoach.core.HealthRecords.meal(date,"Sample meal",400+i*20,1,"",null,now));}
+            records.put(au.com.endurancecoach.core.HealthRecords.meal(today,"Synthetic preview meal",650,1,"",null,now));
+            repo.saveHealth(records);
+            LocalDate effective=today.minusDays(13);
+            JSONObject target=new JSONObject().put("target_id","baseline-"+effective).put("revision",1).put("scope","baseline").put("date",effective.toString())
+                    .put("calories_kcal",2300).put("protein_g",JSONObject.NULL).put("carbohydrate_g",JSONObject.NULL).put("fat_g",JSONObject.NULL)
+                    .put("weight_goal_kg",JSONObject.NULL).put("weight_goal_date","").put("weight_change_kg_per_week",JSONObject.NULL)
+                    .put("training_type","").put("exercise_included",true).put("source","Synthetic preview Coach")
+                    .put("created_at",effective+"T00:00:00.000Z").put("reason","Synthetic preview target").put("status","approved");
+            repo.store.acceptSnapshot(repo.snapshot().put("nutrition_targets",new JSONArray().put(target)),new JSONArray(),new JSONArray());
+        }
+        for(int mode:new int[]{0,1}){CoachTheme.save(context,mode);
+            try(ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).create()){
+                View root=c.get().getWindow().getDecorView();clickDescription(root,"Health");clickText(root,"Diary");capture(root,CoachTheme.MODES[mode]+"-health",640,1280);
+                assertNotNull(findText(root,"Logged calories"));assertNotNull(findText(root,"Breakfast · —"));assertNotNull(findText(root,"Target · 2300 kcal"));assertNotNull(findText(root,"Remaining · 1650 kcal"));
+                clickText(root,"Weight");capture(root,CoachTheme.MODES[mode]+"-health-weight",640,1280);assertNotNull(findType(root,TrendView.class));
+                android.widget.ScrollView scroll=(android.widget.ScrollView)findType(root,android.widget.ScrollView.class);
+                View graph=findType(root,TrendView.class);android.graphics.Rect region=new android.graphics.Rect();graph.getDrawingRect(region);scroll.offsetDescendantRectToMyCoords(graph,region);
+                scroll.scrollTo(0,Math.max(0,region.top-(int)(80*context.getResources().getDisplayMetrics().density)));
+                capture(root,CoachTheme.MODES[mode]+"-health-weight-chart",640,1280);
+                for(String label:new String[]{"Today","Plan","Progress","Insights","Health"}){
+                    View nav=findDescription(root,label);assertTrue(label,nav.getWidth()>=96&&nav.getHeight()>=96);
+                }
+            }
+        }
+    }
+
     private void capture(View root, String name) throws Exception {
         capture(root, name, 786, 1704);
     }

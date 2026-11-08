@@ -6,13 +6,18 @@ The exact ordered headers live in `backend/Code.gs: HEADERS`. The bridge checks 
 
 | Tab | Ownership / meaning |
 |---|---|
-| Events | Event settings, primary/stretch targets, preferred run count, optional fourth and active flag |
+| Events | Event settings, primary/stretch targets, preferred run count, optional fourth, active flag, and current Coach-reviewed outlook |
 | Plan | Append-only ledger. Stable `workout_id`, integer `revision` ≥1; latest revision wins, `cancelled` removes the workout from the current schedule |
 | Activities | Garmin actuals upserted by `activity_id`; import never edits Plan |
 | Wellness | Per-day measured sleep/HRV/resting HR with source hash and coverage note |
 | Feedback | Immutable `feedback_id`; session or daily check-in, effort/soreness/fatigue 0–10, optional note |
 | Matches | Manual override per activity; empty workout ID explicitly means leave unmatched |
+| NutritionTargets | Coach-owned append-only effective baselines and date-specific targets; app read-only |
+| Health | Actual meals/favourites/weight ledger, independent from targets |
+| WorkoutStatus | Completion/skip/reset ledger, independent from Plan and Garmin records |
 | Archive | Content-addressed original JSON file references in a private Drive folder |
+
+`Events` columns L:P hold the current outlook for the active event: `primary_confidence_pct`, `stretch_confidence_pct` (numbers 0–100, interpreted as estimated chances of reaching each yard target), `confidence_as_of` (Perth `YYYY-MM-DD`), `confidence_quality` (`low`, `medium` or `high`), and `confidence_reason` (short evidence summary). Leave all five cells blank until the Coach reviews current training. The normal Coach conversation updates these fields directly; the app only displays them. Only the latest assessment is stored in the row; Google Sheets version history is available for recovery.
 
 Workout types used by the app are `run`, `strength`, `recovery`. Other types display but do not automatically match. A `scheduled` optional run still appears with an optional label. Plan revision metadata records author, creation time and reason. Never edit a historical row to revise a workout; append a higher revision. Two different rows with the same workout/revision are rejected by the app.
 
@@ -25,3 +30,6 @@ Every original activity list/detail response is saved locally with a content has
 Snapshot currently returns the latest 500 activities and 60 wellness days, all plan revisions and feedback. The first Garmin import covers 30 activity days and 7 wellness days; subsequent syncs start from the last successful import with 7 activity days and 3 wellness days of overlap, catching up after longer offline gaps. Transient wellness failures retain retry dates. This is a personal MVP rather than an unlimited historical archive browser.
 
 Recovery diagnostic rows may have a date and coverage note while every measurement is null. They are import attempts, not measured recovery observations. The HTTP status and response shape include no keys, tokens or error bodies. Same-day unavailable fields retain earlier local/cloud measurements and are explicitly labelled retained. Summary `restingValue` is not accepted as measured resting HR because Garmin may substitute the daily minimum.
+
+
+Nutrition/Health/WorkoutStatus exact extended contracts and migration rules: [Health](HEALTH.md), [Coach handover](NUTRITION_COACH_HANDOVER.md). A fresh schema2 capability preflight runs before Health uploads; old acknowledgement-capable servers must not receive extended events. Nutrition validation errors do not roll back unrelated acknowledgements.
