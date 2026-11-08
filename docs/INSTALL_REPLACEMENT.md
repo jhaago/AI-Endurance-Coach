@@ -14,6 +14,6 @@ Keep the current app installed until these checks are complete:
 4. Only after reviewing those checks, choose whether to uninstall the old Endurance Coach and install this replacement. This step is user-controlled; development has not changed the phone.
 5. Re-enter connections in Settings and download central training data. If you installed the separate Preview, its data remains in that separate app until you remove it; keep it while it has unsynced Health entries.
 
-The Health bridge deployment is still pending Google sign-in. Health entries save offline but cannot upload until the server update is deployed. Uninstalling either app discards its unsynced local data.
+The Health/nutrition/completion bridge deployment version3 is verified live. Confirm your phone can sync and the pending count clears before changing an installation. Uninstalling either app discards its unsynced local data.
 
 Future Endurance Coach updates must use the exact replacement signing key, already saved privately in the Endurance-Coach-Preview-Signing-Backup.zip archive. The key is the same for this normal package despite that archive's historical filename. Never use the ephemeral CI signing certificate for phone updates.

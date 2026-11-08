@@ -8,7 +8,9 @@ Execute inline root integration, independent backend and Health UI owners. Same 
 - [x] Health owner: actual Health model/Diary/Weight UI and tests; consumes root NutritionTargets.Target and repository getters, no target writes.
 - [x] Root: NutritionTargets validation/selection/cache tests; repository warning propagation/transactional cache; WorkoutCompletion core/store/outbox/UI and tests.
 - [x] Integrate tests/lint/JSON/cleanAPK/signer, native previews and focused review; fix important findings via regressions.
-- [ ] Root: inspect live headers, additive header migration only, deploy same Apps Script URL if auth available; run read-only verification. No synthetic nutrition targets in personal sheet.
-- [ ] Publish source/updatePR/APK+ZIP; Coach handover exactschema/protocol and limits. Explicit outstanding phone/deployment checks.
+- [x] Root: inspect live headers, additive header migration only, deploy same Apps Script URL if auth available; run read-only verification. No synthetic nutrition targets in personal sheet.
+- [x] Publish source/updatePR/APK+ZIP; Coach handover exactschema/protocol and limits. Explicit outstanding phone/deployment checks.
 
 Checkpoint: Google Sheet additive headers verified. Apps Script signed out; deployment and authenticated phone roundtrip remain blocked until secure sign-in. No live target values seeded. Final artifact signer/package verified.
+
+Final deployment: renewed Google sign-in, exact tested source saved, live verifyCoachSetup passed, existing deployment updated tov3 atsameURL, GETverifiedbridge0.5.0. Remainingmanualphonechecks documented. APK/ZIP/handover saved; sourcepublishedPR1.

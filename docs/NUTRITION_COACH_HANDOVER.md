@@ -46,4 +46,4 @@ Validation bounds are storage checks, not nutritional recommendations: calorie t
 
 App refresh: open Endurance Coach (or Settings → Sync & import details → Refresh plan). Target changes require no new APK or deployment once the bridge version supporting NutritionTargets is deployed. A successful Sheet write confirms the database only; confirm the app shows the same date/value after sync. Failed/invalid/missing target data preserves the last valid cache and displays a warning. No actual targets have been seeded by development.
 
-Deployment prerequisite: consult `docs/VALIDATION.md` for the verified release deployment state. The sheet schema exists; a source commit alone does not make an Apps Script deployment live.
+Deployment verified on 8 November 2026: existing Apps Script web app updated to version3; same /exec URL; public GET reports bridge_version0.5.0; live read-only verifyCoachSetup passed. Phone upload/download remains a manual check. No approved targets have been seeded; obtain my approval before writing real values.

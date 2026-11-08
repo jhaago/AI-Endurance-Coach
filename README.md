@@ -54,6 +54,6 @@ Health/completion changes persist offline. A fresh server capability check preve
 
 The normal package is `au.com.endurancecoach`, version0.5.0/code9, signed with the same privately backed-up replacement key as0.4.x. Install over0.4.x without uninstalling. Original0.3.x uses a lost older key; see [replacement checks](docs/INSTALL_REPLACEMENT.md). CI uses its own ephemeral signer and is not the phone update artifact.
 
-The Sheet schema is migrated and read back. Apps Script deployment must be verified separately; see [validation status](docs/VALIDATION.md). A source commit is not a live bridge update.
+The Sheet schema is migrated and read back. Existing Apps Script deployment version3 is live at the same URL and its0.5.0 version response and read-only setup check are verified. Physical phone roundtrip remains to be checked; see [validation status](docs/VALIDATION.md).
 
 Post-run: save the activity on your watch, wait for Garmin Connect availability (Strava may receive its own copy), then open Endurance Coach and add feedback to the imported activity. Saved feedback queues immediately for the central database. Before discussing it in ChatGPT later, Settings → Sync & import details can confirm cloud sync and no pending changes. ChatGPT reads the connected database when asked; there is no automatic coaching conversation triggered by a run.
