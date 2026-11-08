@@ -98,3 +98,9 @@ The Health Diary now uses a compact previous-day / selected-date / next-day cont
 ## Version 0.5.2 Sheet-managed weight goal
 
 The Weight screen now displays only the approved `weight_goal_kg` (and optional `weight_goal_date`) selected from `NutritionTargets`. The legacy goal stored with Health records no longer appears as a fallback, so an absent Sheet goal is shown as “No weight goal set in Sheets.” This is an Android-only change; no Sheet schema or Apps Script deployment change is required. No test suite was run for this UI-source change.
+
+## Version 0.6.0 Coach-reviewed event outlook
+
+The active Events row now has five appended outlook fields (L:P) for primary and stretch goal percentages, assessment date, evidence quality and rationale. The spreadsheet headers were read back with the Herdy's event row preserved; no confidence estimates were seeded by development. Android Today displays only finite 0–100 values with a valid non-future Perth date; it also shows evidence quality, rationale and a review-due note after 14 days. When absent or invalid, it displays “Awaiting Coach assessment.”
+
+Apps Script schema and snapshot source updated and saved. Read-only `verifyCoachSetup` completed with `ok:true` and nutrition target readiness true. The existing deployment was updated to version4 on 8 November 2026 at 13:50 Perth, retaining the same deployment ID, `/exec` URL, execute-as account and access. Public GET returned `bridge_version:"0.6.0"` and the authenticated-POST instruction. Phone sync and visual Android acceptance remain manual. No test suite was run for this change.
