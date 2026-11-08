@@ -1,6 +1,6 @@
 # Endurance Coach installation and updates
 
-If Endurance Coach 0.4.0 is already installed with the backed-up replacement key, install 0.5.0 directly over it. Keep the app installed; settings and local data remain in place.
+If Endurance Coach 0.4.0 or later is already installed with the backed-up replacement key, install the latest version directly over it. Keep the app installed; settings and local data remain in place.
 
 For the older 0.3.x installation only:
 
