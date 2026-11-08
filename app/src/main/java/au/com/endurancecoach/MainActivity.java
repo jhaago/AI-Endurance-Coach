@@ -308,7 +308,33 @@ public final class MainActivity extends Activity {
             target.addView(text(event.optInt("primary_yards", 10) + " yards", 28, theme.accent, true));
             target.addView(text(String.format(Locale.UK, "%.2f km target · Stretch %d yards / %.2f km",
                     event.optDouble("primary_km", 67.06), event.optInt("stretch_yards", 12), event.optDouble("stretch_km", 80.47)), 13, theme.muted, false));
+            eventOutlook(target, event);
         }
+    }
+    private void eventOutlook(LinearLayout card, JSONObject event) {
+        Object primaryValue = event.opt("primary_confidence_pct"), stretchValue = event.opt("stretch_confidence_pct");
+        if (!(primaryValue instanceof Number) || !(stretchValue instanceof Number)) {
+            card.addView(text("Current outlook · Awaiting Coach assessment", 14, theme.muted, false));
+            return;
+        }
+        double primary = ((Number) primaryValue).doubleValue(), stretch = ((Number) stretchValue).doubleValue();
+        String dateValue = event.optString("confidence_as_of", "");
+        LocalDate assessed;
+        try { assessed = LocalDate.parse(dateValue); }
+        catch (Exception invalid) { card.addView(text("Current outlook · Awaiting Coach assessment", 14, theme.muted, false)); return; }
+        if (!Double.isFinite(primary) || !Double.isFinite(stretch) || primary < 0 || primary > 100 || stretch < 0 || stretch > 100 || assessed.isAfter(today())) {
+            card.addView(text("Current outlook · Awaiting Coach assessment", 14, theme.muted, false));
+            return;
+        }
+        card.addView(text("Current outlook", 16, theme.ink, true));
+        card.addView(text(String.format(Locale.UK, "%d yards · %.0f%%     %d-yard stretch · %.0f%%",
+                event.optInt("primary_yards", 10), primary, event.optInt("stretch_yards", 12), stretch), 16, theme.accent, true));
+        card.addView(text("Coach assessment · " + assessed.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.UK)), 12, theme.muted, false));
+        String quality = event.optString("confidence_quality", "").trim();
+        if (!quality.isEmpty()) card.addView(text("Evidence quality · " + quality.substring(0, 1).toUpperCase(Locale.UK) + quality.substring(1), 12, theme.muted, false));
+        String reason = event.optString("confidence_reason", "").trim();
+        if (!reason.isEmpty()) card.addView(text(reason, 13, theme.muted, false));
+        if (java.time.temporal.ChronoUnit.DAYS.between(assessed, today()) > 14) card.addView(text("Review due · assessment is over 14 days old", 12, theme.accent, true));
     }
     private void workout(JSONObject w, WorkoutCompletion.Result result, boolean featured) throws Exception {
         LinearLayout c = card(featured ? theme.accentSurface : theme.surface);
