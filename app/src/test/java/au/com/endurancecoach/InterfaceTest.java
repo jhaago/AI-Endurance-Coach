@@ -250,11 +250,22 @@ public class InterfaceTest {
         try(CoachRepository repo=new CoachRepository(context)){assertEquals(4,repo.healthRecords().length());assertEquals(4,repo.store.pending("health").length());}
     }
 
-    @Test public void removingWeightClosesTheStaleEditFormAndGoalRemainsReadOnly() throws Exception {
-        try(CoachRepository repo=new CoachRepository(context)){long now=System.currentTimeMillis();repo.saveHealth(new JSONArray().put(au.com.endurancecoach.core.HealthRecords.weight(today,98,null,now)).put(au.com.endurancecoach.core.HealthRecords.goal(85,null,now)));}
+    @Test public void removingWeightClosesTheStaleEditFormAndSheetGoalRemainsReadOnly() throws Exception {
+        try(CoachRepository repo=new CoachRepository(context)){
+            long now=System.currentTimeMillis();
+            repo.saveHealth(new JSONArray().put(au.com.endurancecoach.core.HealthRecords.weight(today,98,null,now))
+                    .put(au.com.endurancecoach.core.HealthRecords.goal(90,null,now)));
+            LocalDate effective=today.minusDays(1);
+            JSONObject target=new JSONObject().put("target_id","baseline-"+effective).put("revision",1).put("scope","baseline").put("date",effective.toString())
+                    .put("calories_kcal",2300).put("protein_g",JSONObject.NULL).put("carbohydrate_g",JSONObject.NULL).put("fat_g",JSONObject.NULL)
+                    .put("weight_goal_kg",85).put("weight_goal_date","").put("weight_change_kg_per_week",JSONObject.NULL)
+                    .put("training_type","").put("exercise_included",true).put("source","Synthetic test Coach")
+                    .put("created_at",effective+"T00:00:00.000Z").put("reason","Synthetic weight goal").put("status","approved");
+            repo.store.acceptSnapshot(repo.snapshot().put("nutrition_targets",new JSONArray().put(target)),new JSONArray(),new JSONArray());
+        }
         try(ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).create()){
             View root=c.get().getWindow().getDecorView();clickDescription(root,"Health");clickText(root,"Weight");
-            assertNotNull(findText(root,"Weight goal · 85.0 kg"));assertNull(findText(root,"Set goal weight"));
+            assertNotNull(findText(root,"Weight goal · 85.0 kg"));assertNull(findText(root,"Weight goal · 90.0 kg"));assertNull(findText(root,"Set goal weight"));
             clickText(root,"Edit weight");org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();
             AlertDialog edit=ShadowAlertDialog.getLatestAlertDialog();clickText(edit.getWindow().getDecorView(),"Remove weight");
             ShadowAlertDialog.getLatestAlertDialog().getButton(AlertDialog.BUTTON_POSITIVE).performClick();org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle();assertFalse(edit.isShowing());
