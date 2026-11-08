@@ -52,7 +52,7 @@ Workout cards distinguish planned and actual minutes, including completed shorte
 
 Health/completion changes persist offline. A fresh server capability check prevents the old bridge acknowledging newer Health fields it cannot store. Failed uploads remain queued. Invalid nutrition targets retain the last valid target cache and warn without blocking training and notes. Sync controls/status remain in Settings.
 
-The normal package is `au.com.endurancecoach`, version0.5.0/code9, signed with the same privately backed-up replacement key as0.4.x. Install over0.4.x without uninstalling. Original0.3.x uses a lost older key; see [replacement checks](docs/INSTALL_REPLACEMENT.md). CI uses its own ephemeral signer and is not the phone update artifact.
+The normal package is `au.com.endurancecoach`, version0.5.1/code10, signed with the same privately backed-up replacement key as0.4.x. Install over0.4.x or later without uninstalling. Original0.3.x uses a lost older key; see [replacement checks](docs/INSTALL_REPLACEMENT.md). CI uses its own ephemeral signer and is not the phone update artifact.
 
 The Sheet schema is migrated and read back. Existing Apps Script deployment version3 is live at the same URL and its0.5.0 version response and read-only setup check are verified. Physical phone roundtrip remains to be checked; see [validation status](docs/VALIDATION.md).
 
