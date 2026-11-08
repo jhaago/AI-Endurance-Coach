@@ -52,8 +52,12 @@ Workout cards distinguish planned and actual minutes, including completed shorte
 
 Health/completion changes persist offline. A fresh server capability check prevents the old bridge acknowledging newer Health fields it cannot store. Failed uploads remain queued. Invalid nutrition targets retain the last valid target cache and warn without blocking training and notes. Sync controls/status remain in Settings.
 
-The normal package is `au.com.endurancecoach`, version0.5.2/code11, signed with the same privately backed-up replacement key as0.4.x. Install over0.4.x or later without uninstalling. Original0.3.x uses a lost older key; see [replacement checks](docs/INSTALL_REPLACEMENT.md). CI uses its own ephemeral signer and is not the phone update artifact.
+## Coach-reviewed event outlook (0.6.0)
 
-The Sheet schema is migrated and read back. Existing Apps Script deployment version3 is live at the same URL and its0.5.0 version response and read-only setup check are verified. Physical phone roundtrip remains to be checked; see [validation status](docs/VALIDATION.md).
+Today can show the Coach's current estimated chance of reaching both the event's primary yard target and stretch target, with assessment date, evidence quality and a brief rationale. These are not app-generated predictions. The Coach reviews recent training and writes the current assessment to appended fields in the active row of `Events`; the app only displays valid values and flags assessments older than 14 days. See [the data contract](docs/DATA.md) and [Chat workflow](docs/CHAT_WORKFLOW.md).
+
+The normal package is `au.com.endurancecoach`, version0.6.0/code12, signed with the same privately backed-up replacement key as0.4.x. Install over0.4.x or later without uninstalling. Original0.3.x uses a lost older key; see [replacement checks](docs/INSTALL_REPLACEMENT.md). CI uses its own ephemeral signer and is not the phone update artifact.
+
+The Sheets schema is migrated and read back. Existing Apps Script deployment version4 is live at the same URL, and its public0.6.0 response and read-only setup check are verified. Physical phone roundtrip remains to be checked; see [validation status](docs/VALIDATION.md).
 
 Post-run: save the activity on your watch, wait for Garmin Connect availability (Strava may receive its own copy), then open Endurance Coach and add feedback to the imported activity. Saved feedback queues immediately for the central database. Before discussing it in ChatGPT later, Settings → Sync & import details can confirm cloud sync and no pending changes. ChatGPT reads the connected database when asked; there is no automatic coaching conversation triggered by a run.
