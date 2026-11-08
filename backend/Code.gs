@@ -7,7 +7,9 @@ var HEADERS = {
   Feedback: ['feedback_id','activity_id','workout_id','created_at','rpe','soreness','fatigue','note'],
   Matches: ['activity_id','workout_id','updated_at'],
   Archive: ['record_id','sha256','drive_file_id','created_at'],
-  Health: ['change_id','record_id','kind','date','name','calories_kcal','portions','weight_kg','note','deleted','updated_at']
+  Health: ['change_id','record_id','kind','date','name','calories_kcal','portions','weight_kg','note','deleted','updated_at','meal_type','protein_g','carbohydrate_g','fat_g'],
+  WorkoutStatus: ['change_id','workout_id','status','actual_duration_min','note','updated_at'],
+  NutritionTargets: ['target_id','revision','scope','date','calories_kcal','protein_g','carbohydrate_g','fat_g','weight_goal_kg','weight_goal_date','weight_change_kg_per_week','training_type','exercise_included','source','created_at','reason','status']
 };
 
 function doGet() { return output({ok:false,error:'Use authenticated POST'}); }
@@ -32,11 +34,12 @@ function doPost(e) {
       payload.feedback.forEach(function(f){if(!find(db,'Feedback','feedback_id',f.feedback_id))append(db,'Feedback',f);});
       payload.matches.forEach(function(m){upsert(db,'Matches','activity_id',m);});
       appendHealth(db,payload.health_new);
+      appendLedger(db,'WorkoutStatus',payload.workout_status_new);
     }
-    return output({ok:true,ack_feedback:payload.feedback.map(function(f){return f.feedback_id;}),ack_health:req.action==='sync'?payload.health_ack:[],snapshot:snapshot(db)});
+    return output({ok:true,ack_feedback:payload.feedback.map(function(f){return f.feedback_id;}),ack_health:req.action==='sync'?payload.health_ack:[],ack_workout_status:req.action==='sync'?payload.workout_status_ack:[],snapshot:snapshot(db)});
   } catch(err) {
     // No stack, upstream response, tokens, or arbitrary exception text in the public response.
-    var allowed=['Unauthorized','Invalid request','Invalid action','Invalid activity','Invalid wellness','Invalid feedback','Feedback conflict','Invalid match','Invalid health','Health conflict','Schema mismatch'];
+    var allowed=['Unauthorized','Invalid request','Invalid action','Invalid activity','Invalid wellness','Invalid feedback','Feedback conflict','Invalid match','Invalid health','Health conflict','Invalid workout status','Workout status conflict','Schema mismatch'];
     return output({ok:false,error:allowed.indexOf(err.message)>=0?err.message:'Bridge unavailable; check setup and retry'});
   } finally {if(lock)lock.releaseLock();}
 }
@@ -49,16 +52,26 @@ function sheet(db,name) {
 }
 function records(db,name) {
  var values=sheet(db,name).getDataRange().getValues();
- return values.slice(1).filter(function(r){return r[0]!=='';}).map(function(r){var obj={};HEADERS[name].forEach(function(k,i){var v=r[i]; obj[k]=(v===''||v===undefined)?null:v instanceof Date?v.toISOString():v;});return obj;});
+ return values.slice(1).filter(function(r){return r[0]!=='';}).map(function(r){return recordFromRow(name,r,db);});
+}
+function recordFromRow(name,r,db) {
+ var obj={};HEADERS[name].forEach(function(k,i){var v=r[i];obj[k]=(v===''||v===undefined)?null:(k==='date'||k==='weight_goal_date')?calendarDay(v,db):v instanceof Date?v.toISOString():v;});return obj;
+}
+function calendarDay(value,db) {
+ if(value instanceof Date)return Utilities.formatDate(value,db.getSpreadsheetTimeZone(),'yyyy-MM-dd');
+ if(typeof value==='string'&&value.charAt(0)==="'"&&validDate(value.slice(1)))return value.slice(1);
+ return value;
 }
 function safe(value){if(value===null||value===undefined)return '';if(typeof value==='string'&&/^[=+@\-]/.test(value))return "'"+value;return value;}
-function row(name,obj){return HEADERS[name].map(function(k){return safe(obj[k]);});}
+function row(name,obj){return HEADERS[name].map(function(k){return (k==='date'||k==='weight_goal_date')&&validDate(obj[k])?"'"+obj[k]:safe(obj[k]);});}
 function append(db,name,obj){sheet(db,name).appendRow(row(name,obj));}
-function find(db,name,key,id){return records(db,name).find(function(r){return String(r[key])===String(id);});}
+function find(db,name,key,id){return (name==='Wellness'?currentWellness(db):records(db,name)).find(function(r){return String(r[key])===String(id);});}
 function upsert(db,name,key,obj) {
  if(name==='Wellness')obj=preserveWellness(obj,find(db,'Wellness',key,obj[key]));
  var s=sheet(db,name), rows=s.getDataRange().getValues(), col=HEADERS[name].indexOf(key);
- for(var i=1;i<rows.length;i++)if(String(rows[i][col])===String(obj[key])){s.getRange(i+1,1,1,HEADERS[name].length).setValues([row(name,obj)]);return;}
+ var match=-1;
+ for(var i=1;i<rows.length;i++)if(String(key==='date'?calendarDay(rows[i][col],db):rows[i][col])===String(obj[key])){match=i;if(name!=='Wellness')break;}
+ if(match>=0){s.getRange(match+1,1,1,HEADERS[name].length).setValues([row(name,obj)]);return;}
  s.appendRow(row(name,obj));
 }
 function preserveWellness(fresh,previous) {
@@ -68,11 +81,19 @@ function preserveWellness(fresh,previous) {
  if(retained)result.coverage_note=(result.coverage_note||'')+'\nPrevious measured values retained where the latest values are unavailable.';
  return result;
 }
+function currentWellness(db) {
+ var latest=new Map();
+ records(db,'Wellness').map(function(w,i){return {value:w,index:i};}).sort(function(a,b){return (Date.parse(a.value.updated_at)||0)-(Date.parse(b.value.updated_at)||0)||a.index-b.index;}).forEach(function(entry){
+   var w=entry.value;latest.set(w.date,preserveWellness(w,latest.get(w.date)));
+ });
+ return Array.from(latest.values()).sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
+}
 function validId(value){return (typeof value==='string'||typeof value==='number')&&/^[a-zA-Z0-9_:.\-]{1,100}$/.test(String(value));}
 function validDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&!isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;}
 function validTime(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(value)&&value.endsWith('Z')&&!isNaN(Date.parse(value));}
 function finiteOrNull(value,min,max){return value===null||value===undefined||(typeof value==='number'&&isFinite(value)&&value>=min&&value<=max);}
 function validate(req,db) {
+ if(Object.prototype.hasOwnProperty.call(req,'nutrition_targets'))throw Error('Invalid request');
  var p={activities:req.activities||[],wellness:req.wellness||[],feedback:req.feedback||[],matches:req.matches||[]};
  Object.keys(p).forEach(function(k){if(!Array.isArray(p[k])||p[k].length>100)throw Error('Invalid request');});
  p.activities.forEach(function(a){if(!validId(a.activity_id)||!validTime(a.start_utc)||typeof a.type!=='string'||!finiteOrNull(a.distance_m,0,10000000)||!finiteOrNull(a.duration_s,0,10000000)||!finiteOrNull(a.average_hr,0,300)||typeof(a.raw_json||'')!=='string'||(a.raw_json||'').length>1000000)throw Error('Invalid activity');});
@@ -87,64 +108,114 @@ function validate(req,db) {
  p.matches.forEach(function(m){if(!validId(m.activity_id)||(m.workout_id!==''&&!validId(m.workout_id))||!validTime(m.updated_at))throw Error('Invalid match');});
  p.health=req.health===undefined?[]:req.health;
  var health=validateHealth(p.health,db);p.health_new=health.changes;p.health_ack=health.ack;
+ p.workout_status=req.workout_status===undefined?[]:req.workout_status;
+ var statuses=validateLedger(p.workout_status,db,'WorkoutStatus',workoutStatusRecords,validWorkoutStatus,'Invalid workout status','Workout status conflict');
+ p.workout_status_new=statuses.changes;p.workout_status_ack=statuses.ack;
  return p;
 }
 
-// Health has its own reader/writer: other sheets keep their existing representation.
-// Prefix every string, including the ID, with a Sheets literal marker. Native Sheets
-// removes one marker on read; literal-only adapters retain it. The ID cannot itself
-// contain an apostrophe, so it tells us whether to remove exactly one from each cell.
-// This also preserves intentional leading apostrophes without conflating payloads.
-function healthRow(obj) {
- return HEADERS.Health.map(function(k){var v=obj[k];return typeof v==='string'?"'"+v:safe(v);});
+// Immutable ledgers prefix every string with a Sheets literal marker. Native
+// Sheets removes one marker; literal-only adapters retain it. Since valid IDs
+// cannot contain apostrophes, change_id tells us whether to remove one marker
+// from every text cell. Intentional leading apostrophes remain distinct.
+function literalRow(name,obj) {
+ return HEADERS[name].map(function(k){var v=obj[k];return typeof v==='string'?"'"+v:safe(v);});
 }
+function decodeLiterals(obj,name,key) {
+ if(typeof obj[key]==='string'&&obj[key].charAt(0)==="'")HEADERS[name].forEach(function(k){if(typeof obj[k]==='string'&&obj[k].charAt(0)==="'")obj[k]=obj[k].slice(1);});
+ return obj;
+}
+function literalRecords(db,name) {return records(db,name).map(function(obj){return decodeLiterals(obj,name,'change_id');});}
+function canonicalHealth(h) {
+ if(!h||typeof h!=='object'||Array.isArray(h))return h;
+ var result=Object.assign({},h);
+ if(result.meal_type===undefined||result.meal_type==='')result.meal_type=result.kind==='meal'?'other':'';
+ ['protein_g','carbohydrate_g','fat_g'].forEach(function(k){if(result[k]===undefined)result[k]=null;});
+ return result;
+}
+function healthRow(obj) {return literalRow('Health',canonicalHealth(obj));}
 function healthRecords(db) {
- return records(db,'Health').map(function(obj){
-   var literal=typeof obj.change_id==='string'&&obj.change_id.charAt(0)==="'";
-   HEADERS.Health.forEach(function(k){if(literal&&typeof obj[k]==='string'&&obj[k].charAt(0)==="'")obj[k]=obj[k].slice(1);});
+ return literalRecords(db,'Health').map(function(obj){
    ['date','name','note'].forEach(function(k){if(obj[k]===null)obj[k]='';});
-   return obj;
+   if(obj.meal_type===null)obj.meal_type='';
+   return canonicalHealth(obj);
  });
 }
-function healthFingerprint(obj) {return JSON.stringify(HEADERS.Health.map(function(k){return obj[k];}));}
+function workoutStatusRecords(db) {
+ return literalRecords(db,'WorkoutStatus').map(function(obj){if(obj.note===null)obj.note='';return obj;});
+}
+function canonicalTime(value) {
+ return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)&&!isNaN(Date.parse(value))&&new Date(value).toISOString()===value;
+}
+function validChange(h) {return !!h&&typeof h==='object'&&!Array.isArray(h)&&typeof h.change_id==='string'&&validId(h.change_id)&&typeof h.note==='string'&&h.note.length<=1000&&canonicalTime(h.updated_at);}
 function validHealth(h) {
- if(!h||typeof h!=='object'||Array.isArray(h)||typeof h.change_id!=='string'||!validId(h.change_id)||typeof h.record_id!=='string'||!validId(h.record_id)||['meal','favourite','weight','goal'].indexOf(h.kind)<0||typeof h.note!=='string'||h.note.length>1000||typeof h.deleted!=='boolean'||typeof h.updated_at!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(h.updated_at)||isNaN(Date.parse(h.updated_at))||new Date(h.updated_at).toISOString()!==h.updated_at)return false;
+ if(!validChange(h)||typeof h.record_id!=='string'||!validId(h.record_id)||['meal','favourite','weight','goal'].indexOf(h.kind)<0||typeof h.deleted!=='boolean')return false;
  var food=h.kind==='meal'||h.kind==='favourite',dated=h.kind==='meal'||h.kind==='weight';
  if(dated?!validDate(h.date):h.date!=='')return false;
+ if(h.kind==='meal'?['breakfast','lunch','dinner','snacks','other'].indexOf(h.meal_type)<0:h.meal_type!=='')return false;
+ if(!['protein_g','carbohydrate_g','fat_g'].every(function(k){return h[k]===null||(food&&typeof h[k]==='number'&&isFinite(h[k])&&h[k]>=0&&h[k]<=5000);}))return false;
  if(food)return typeof h.name==='string'&&h.name.length>=1&&h.name.length<=120&&typeof h.calories_kcal==='number'&&isFinite(h.calories_kcal)&&h.calories_kcal>=0&&h.calories_kcal<=20000&&h.weight_kg===null&&(h.kind==='favourite'?h.portions===1:typeof h.portions==='number'&&isFinite(h.portions)&&h.portions>0&&h.portions<=100);
  return h.name===''&&h.calories_kcal===null&&h.portions===null&&typeof h.weight_kg==='number'&&isFinite(h.weight_kg)&&h.weight_kg>0&&h.weight_kg<=500&&h.record_id===(h.kind==='weight'?'weight:'+h.date:'goal-weight');
 }
+function validWorkoutStatus(h) {
+ return validChange(h)&&typeof h.workout_id==='string'&&validId(h.workout_id)&&['completed','skipped','scheduled'].indexOf(h.status)>=0&&(h.actual_duration_min===null||(h.status==='completed'&&typeof h.actual_duration_min==='number'&&isFinite(h.actual_duration_min)&&h.actual_duration_min>=0&&h.actual_duration_min<=10080));
+}
 function validateHealth(changes,db) {
  if(!Array.isArray(changes)||changes.length>100)throw Error('Invalid health');
- changes.forEach(function(h){if(!validHealth(h))throw Error('Invalid health');});
+ return validateLedger(changes.map(canonicalHealth),db,'Health',healthRecords,validHealth,'Invalid health','Health conflict');
+}
+function validateLedger(changes,db,name,read,isValid,invalid,conflict) {
+ if(!Array.isArray(changes)||changes.length>100)throw Error(invalid);
+ changes.forEach(function(h){if(!isValid(h))throw Error(invalid);});
  var fingerprints=new Map(),known=new Set(),ack=[],fresh=[];
- healthRecords(db).forEach(function(h){
-   var fingerprint=healthFingerprint(h);
-   if(fingerprints.has(h.change_id)&&fingerprints.get(h.change_id)!==fingerprint)throw Error('Health conflict');
-   fingerprints.set(h.change_id,fingerprint);known.add(h.change_id);
+ function fingerprint(h){return JSON.stringify(HEADERS[name].map(function(k){return h[k];}));}
+ read(db).forEach(function(h){
+   var value=fingerprint(h);
+   if(fingerprints.has(h.change_id)&&fingerprints.get(h.change_id)!==value)throw Error(conflict);
+   fingerprints.set(h.change_id,value);known.add(h.change_id);
  });
  changes.forEach(function(h){
-   var fingerprint=healthFingerprint(h);
-   if(fingerprints.has(h.change_id)&&fingerprints.get(h.change_id)!==fingerprint)throw Error('Health conflict');
+   var value=fingerprint(h);
+   if(fingerprints.has(h.change_id)&&fingerprints.get(h.change_id)!==value)throw Error(conflict);
    if(ack.indexOf(h.change_id)<0)ack.push(h.change_id);
    if(!known.has(h.change_id)){fresh.push(h);known.add(h.change_id);}
-   fingerprints.set(h.change_id,fingerprint);
+   fingerprints.set(h.change_id,value);
  });
  return {changes:fresh,ack:ack};
 }
-function appendHealth(db,changes) {
+function appendHealth(db,changes) {appendLedger(db,'Health',changes);}
+function appendLedger(db,name,changes) {
  if(!changes.length)return;
- var s=sheet(db,'Health'),start=s.getLastRow()+1,required=start+changes.length-1,capacity=s.getMaxRows();
+ var s=sheet(db,name),start=s.getLastRow()+1,required=start+changes.length-1,capacity=s.getMaxRows();
  if(required>capacity)s.insertRowsAfter(capacity,required-capacity);
- s.getRange(start,1,changes.length,HEADERS.Health.length).setValues(changes.map(healthRow));
+ s.getRange(start,1,changes.length,HEADERS[name].length).setValues(changes.map(function(h){return literalRow(name,h);}));
 }
-function currentHealth(changes) {
+function currentHealth(changes) {return currentChanges(changes,'record_id');}
+function currentChanges(changes,key) {
  var latest=new Map();
  changes.forEach(function(h){
-   var old=latest.get(h.record_id),time=Date.parse(h.updated_at),oldTime=old?Date.parse(old.updated_at):0;
-   if(!old||time>oldTime||(time===oldTime&&h.change_id>old.change_id))latest.set(h.record_id,h);
+   var old=latest.get(h[key]),time=Date.parse(h.updated_at),oldTime=old?Date.parse(old.updated_at):0;
+   if(!old||time>oldTime||(time===oldTime&&h.change_id>old.change_id))latest.set(h[key],h);
  });
  return Array.from(latest.values());
+}
+function validNutritionTarget(t) {
+ if(!t||['baseline','daily'].indexOf(t.scope)<0||!validDate(t.date)||t.target_id!==(t.scope==='baseline'?'baseline-':'nutrition-')+t.date||!Number.isSafeInteger(t.revision)||t.revision<1||typeof t.calories_kcal!=='number'||!isFinite(t.calories_kcal)||t.calories_kcal<=0||t.calories_kcal>20000)return false;
+ if(!['protein_g','carbohydrate_g','fat_g'].every(function(k){return t[k]===null||(typeof t[k]==='number'&&isFinite(t[k])&&t[k]>=0&&t[k]<=5000);}))return false;
+ return (t.weight_goal_kg===null||(typeof t.weight_goal_kg==='number'&&isFinite(t.weight_goal_kg)&&t.weight_goal_kg>0&&t.weight_goal_kg<=500))&&(t.weight_goal_date===''||validDate(t.weight_goal_date))&&(t.weight_change_kg_per_week===null||(typeof t.weight_change_kg_per_week==='number'&&isFinite(t.weight_change_kg_per_week)&&t.weight_change_kg_per_week>=-5&&t.weight_change_kg_per_week<=5))&&typeof t.training_type==='string'&&t.training_type.length<=120&&typeof t.exercise_included==='boolean'&&typeof t.source==='string'&&t.source.trim().length>0&&t.source.length<=120&&canonicalTime(t.created_at)&&typeof t.reason==='string'&&t.reason.length<=2000&&['approved','draft','cancelled'].indexOf(t.status)>=0;
+}
+function nutritionTargets(db) {
+ // A row with a blank ID but other content is malformed, not an omitted record.
+ var values=sheet(db,'NutritionTargets').getDataRange().getValues(),unique=new Map();
+ values.slice(1).filter(function(r){return r.some(function(v){return v!==''&&v!==null&&v!==undefined;});}).forEach(function(r){
+   var t=decodeLiterals(recordFromRow('NutritionTargets',r,db),'NutritionTargets','target_id');
+   ['weight_goal_date','training_type','reason'].forEach(function(k){if(t[k]===null)t[k]='';});
+   if(!validNutritionTarget(t))throw Error('Invalid nutrition targets');
+   var key=t.target_id+':'+t.revision,old=unique.get(key);
+   if(old&&JSON.stringify(HEADERS.NutritionTargets.map(function(k){return old[k];}))!==JSON.stringify(HEADERS.NutritionTargets.map(function(k){return t[k];})))throw Error('Nutrition targets conflict');
+   if(!old)unique.set(key,t);
+ });
+ return Array.from(unique.values());
 }
 
 function archive(db,props,id,json) {
@@ -156,7 +227,9 @@ function archive(db,props,id,json) {
 }
 function snapshot(db) {
  var activities=records(db,'Activities').sort(function(a,b){return String(b.start_utc).localeCompare(String(a.start_utc));}).slice(0,500);
- return {events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:records(db,'Wellness').sort(function(a,b){return String(b.date).localeCompare(String(a.date));}).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),server_time:new Date().toISOString()};
+ var result={events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:currentWellness(db).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),workout_status:currentChanges(workoutStatusRecords(db),'workout_id'),server_time:new Date().toISOString()};
+ try {result.nutrition_targets=nutritionTargets(db);}catch(err){result.nutrition_error='Nutrition targets unavailable; ask your coach to check setup';}
+ return result;
 }
 
 // Run once from the editor after authorisation. Only counts are logged; never credentials or health records.
@@ -175,4 +248,13 @@ function verifyHealthSetup() {
  var props=PropertiesService.getScriptProperties(),db=SpreadsheetApp.openById(props.getProperty('SPREADSHEET_ID'));
  var changes=healthRecords(db);
  return {ok:true,health_changes:changes.length,health_records:currentHealth(changes).length};
+}
+
+
+// Editor-only schema/count check. No schema mutation or individual records.
+function verifyCoachSetup() {
+ var props=PropertiesService.getScriptProperties(),db=SpreadsheetApp.openById(props.getProperty('SPREADSHEET_ID'));
+ var health=healthRecords(db),statuses=workoutStatusRecords(db),ready=true,nutrition=[];
+ try {nutrition=nutritionTargets(db);}catch(err){ready=false;}
+ return {ok:ready,health_changes:health.length,health_records:currentHealth(health).length,workout_status_changes:statuses.length,workout_status_records:currentChanges(statuses,'workout_id').length,nutrition_targets_ready:ready,nutrition_revisions:nutrition.length};
 }

@@ -7,6 +7,8 @@ import org.json.*;
 import java.util.*;
 import au.com.endurancecoach.core.JsonChunks;
 import au.com.endurancecoach.core.HealthRecords;
+import au.com.endurancecoach.core.NutritionTargets;
+import au.com.endurancecoach.core.WorkoutCompletion;
 
 final class LocalStore extends SQLiteOpenHelper {
  LocalStore(Context c){super(c.getApplicationContext(),"coach.db",null,1);}
@@ -28,12 +30,28 @@ final class LocalStore extends SQLiteOpenHelper {
    db.setTransactionSuccessful();
   }finally{db.endTransaction();}
  }
- synchronized void acceptSnapshot(JSONObject snapshot,JSONArray feedback,JSONArray sentMatches,JSONArray healthAck) throws Exception {
+ synchronized JSONArray workoutStatuses() throws Exception {return WorkoutCompletion.current(CoachRepository.array(get("snapshot"),"workout_status"),CoachRepository.array(get("workout-local"),"records"),pending("workout_status"));}
+ synchronized void saveWorkoutStatus(JSONObject change) throws Exception {
+  SQLiteDatabase db=getWritableDatabase();boolean owns=!db.inTransaction();if(owns)db.beginTransaction();try{
+   put("workout-local",new JSONObject().put("records",WorkoutCompletion.current(workoutStatuses(),new JSONArray().put(change))));
+   queue("workout:"+change.getString("change_id"),"workout_status",change);if(owns)db.setTransactionSuccessful();
+  }finally{if(owns)db.endTransaction();}
+ }
+ synchronized void saveFeedback(JSONObject feedback,JSONObject completion) throws Exception {
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{queue(feedback.getString("feedback_id"),"feedback",feedback);if(completion!=null)saveWorkoutStatus(completion);db.setTransactionSuccessful();}finally{db.endTransaction();}
+ }
+ synchronized void acceptSnapshot(JSONObject snapshot,JSONArray feedback,JSONArray sentMatches,JSONArray healthAck) throws Exception {acceptSnapshot(snapshot,feedback,sentMatches,healthAck,new JSONArray());}
+ synchronized void acceptSnapshot(JSONObject snapshot,JSONArray feedback,JSONArray sentMatches,JSONArray healthAck,JSONArray workoutAck) throws Exception {
   SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{
    JSONArray current=HealthRecords.current(healthRecords(),CoachRepository.array(snapshot,"health"));
-   put("snapshot",snapshot);put("health-local",new JSONObject().put("records",current));
+   JSONArray statuses=WorkoutCompletion.current(workoutStatuses(),CoachRepository.array(snapshot,"workout_status"));
+   JSONObject status=get("status");String nutritionError="Nutrition targets unavailable; previous targets retained";
+   if(!snapshot.has("nutrition_error")&&snapshot.optJSONArray("nutrition_targets")!=null)try{put("nutrition-targets",new JSONObject().put("records",NutritionTargets.validate(snapshot.getJSONArray("nutrition_targets"))));nutritionError="";}catch(IllegalArgumentException invalid){nutritionError="Nutrition targets need attention in the training database; previous targets retained";}
+   put("status",status.put("nutrition_error",nutritionError));
+   put("snapshot",snapshot);put("health-local",new JSONObject().put("records",current));put("workout-local",new JSONObject().put("records",statuses));
    for(int i=0;i<feedback.length();i++)ack(feedback.getString(i));
    for(int i=0;i<healthAck.length();i++)ack("health:"+healthAck.getString(i));
+   for(int i=0;i<workoutAck.length();i++)ack("workout:"+workoutAck.getString(i));
    for(int i=0;i<sentMatches.length();i++){JSONObject m=sentMatches.getJSONObject(i);db.delete("outbox","id=? AND json=?",new String[]{"match:"+m.getString("activity_id"),m.toString()});}
    db.setTransactionSuccessful();
   }finally{db.endTransaction();}

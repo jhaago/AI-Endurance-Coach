@@ -16,7 +16,7 @@ public final class HealthRecords {
    return new JSONObject().put("change_id",UUID.randomUUID().toString()).put("record_id",id)
     .put("kind",kind).put("date",date).put("name","").put("calories_kcal",JSONObject.NULL)
     .put("portions",JSONObject.NULL).put("weight_kg",JSONObject.NULL).put("note","")
-    .put("deleted",false).put("updated_at",TIME.format(Instant.ofEpochMilli(time)));
+    .put("deleted",false).put("meal_type","").put("protein_g",JSONObject.NULL).put("carbohydrate_g",JSONObject.NULL).put("fat_g",JSONObject.NULL).put("updated_at",TIME.format(Instant.ofEpochMilli(time)));
   } catch(Exception e){throw new IllegalArgumentException("Invalid previous health entry",e);}
  }
  private static String id(JSONObject previous){return previous==null?UUID.randomUUID().toString():previous.optString("record_id");}
@@ -26,12 +26,24 @@ public final class HealthRecords {
   if(name==null||name.trim().isEmpty()||name.trim().length()>120)throw new IllegalArgumentException("Enter a meal name (up to 120 characters)");
   if(note==null||note.length()>1000)throw new IllegalArgumentException("Keep notes under 1,000 characters");
   number(calories,0,20000,true,"Calories");number(portions,0,100,false,"Portions");
-  try{return base(kind,id(previous),date,previous,now).put("name",name.trim()).put("calories_kcal",calories).put("portions",portions).put("note",note);}
+  try{return nutrients(base(kind,id(previous),date,previous,now).put("name",name.trim()).put("calories_kcal",calories).put("portions",portions).put("note",note),previous);}
   catch(JSONException e){throw new IllegalArgumentException(e);}
  }
- public static JSONObject meal(LocalDate d,String name,double kcal,double portions,String note,JSONObject previous,long now){day(d,now);return food("meal",d.toString(),name,kcal,portions,note,previous,now);}
+ public static JSONObject meal(LocalDate d,String name,double kcal,double portions,String note,JSONObject previous,long now){return meal(d,name,kcal,portions,note,previous,now,"other");}
+ public static JSONObject meal(LocalDate d,String name,double kcal,double portions,String note,JSONObject previous,long now,String mealType){
+  day(d,now);String type=mealType==null||mealType.trim().isEmpty()?"other":mealType;
+  if(!Arrays.asList("breakfast","lunch","dinner","snacks","other").contains(type))throw new IllegalArgumentException("Choose a meal group");
+  try{return food("meal",d.toString(),name,kcal,portions,note,previous,now).put("meal_type",type);}catch(JSONException e){throw new IllegalArgumentException(e);}
+ }
+ private static JSONObject nutrients(JSONObject result,JSONObject source) throws JSONException {
+  for(String key:new String[]{"protein_g","carbohydrate_g","fat_g"}){
+   if(source==null||source.isNull(key)){result.put(key,JSONObject.NULL);continue;}
+   double grams=source.getDouble(key);number(grams,0,5000,true,"Nutrients");result.put(key,grams);
+  }return result;
+ }
  public static JSONObject favourite(String name,double kcal,String note,JSONObject previous,long now){return food("favourite","",name,kcal,1,note,previous,now);}
- public static JSONObject fromFavourite(JSONObject favourite,LocalDate d,double portions,long now){return meal(d,favourite.optString("name"),favourite.optDouble("calories_kcal"),portions,favourite.optString("note"),null,now);}
+ public static JSONObject fromFavourite(JSONObject favourite,LocalDate d,double portions,long now){return fromFavourite(favourite,d,portions,now,"other");}
+ public static JSONObject fromFavourite(JSONObject favourite,LocalDate d,double portions,long now,String mealType){try{return nutrients(meal(d,favourite.optString("name"),favourite.optDouble("calories_kcal"),portions,favourite.optString("note"),null,now,mealType),favourite);}catch(JSONException e){throw new IllegalArgumentException(e);}}
  public static JSONObject weight(LocalDate d,double kg,JSONObject previous,long now){day(d,now);return kilos("weight","weight:"+d,d.toString(),kg,previous,now);}
  public static JSONObject goal(double kg,JSONObject previous,long now){return kilos("goal","goal-weight","",kg,previous,now);}
  private static JSONObject kilos(String kind,String id,String date,double kg,JSONObject previous,long now){number(kg,0,500,false,"Weight");try{return base(kind,id,date,previous,now).put("weight_kg",kg);}catch(JSONException e){throw new IllegalArgumentException(e);}}
@@ -39,7 +51,10 @@ public final class HealthRecords {
  public static JSONArray current(JSONArray... sources){
   TreeMap<String,JSONObject> rows=new TreeMap<>();
   try{for(JSONArray source:sources)for(int i=0;i<source.length();i++){
-   JSONObject row=source.getJSONObject(i);String id=row.getString("record_id");JSONObject old=rows.get(id);
+   JSONObject row=new JSONObject(source.getJSONObject(i).toString());
+   if(row.optString("meal_type").trim().isEmpty())row.put("meal_type","meal".equals(row.optString("kind"))?"other":"");
+   for(String key:new String[]{"protein_g","carbohydrate_g","fat_g"})if(!row.has(key))row.put(key,JSONObject.NULL);
+   String id=row.getString("record_id");JSONObject old=rows.get(id);
    Instant stamp=Instant.parse(row.getString("updated_at"));
    if(old==null||stamp.isAfter(Instant.parse(old.getString("updated_at")))||(stamp.equals(Instant.parse(old.getString("updated_at")))&&row.getString("change_id").compareTo(old.getString("change_id"))>0))rows.put(id,new JSONObject(row.toString()));
   }return new JSONArray(new ArrayList<>(rows.values()));}catch(Exception e){throw new IllegalArgumentException("Invalid health history",e);}

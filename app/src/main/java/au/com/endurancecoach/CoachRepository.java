@@ -53,6 +53,7 @@ final class CoachRepository implements AutoCloseable {
     store.put("status",store.get("status").put("cloud_sync",Instant.now().toString()));
    }else warnings.add("Training database not connected; data stays on this phone");
    if(garmin && credentials.get("garmin").isEmpty())warnings.add("Garmin key not configured");
+   String nutritionWarning=nutritionError();if(!nutritionWarning.isEmpty())warnings.add(nutritionWarning);
    String message=SyncStatus.message(store.get("status").optString("garmin_message",""),warnings);
    store.put("status",store.get("status").put("message",message));
    // Notes still upload after an import failure; background scheduling retains its retry signal.
@@ -62,12 +63,13 @@ final class CoachRepository implements AutoCloseable {
  }
  // Each successful upload already returns a full snapshot. An idle refresh still needs one read.
  void syncCloud(BridgeClient client) throws Exception {
-  JSONObject local=store.get("local");JSONArray feedback=store.pending("feedback"),matches=store.pending("match"),health=store.pending("health");
+  JSONObject local=store.get("local");JSONArray feedback=store.pending("feedback"),matches=store.pending("match"),health=store.pending("health"),workout=store.pending("workout_status");
   int requests=uploadChanged(client,"activities",array(local,"activities"),"activity_id",10)
     +uploadChanged(client,"wellness",array(local,"wellness"),"date",3);
   for(int start=0;start<feedback.length();start+=30){send(client,new JSONObject().put("action","sync").put("feedback",slice(feedback,start,30)));requests++;}
   for(int start=0;start<matches.length();start+=30){send(client,new JSONObject().put("action","sync").put("matches",slice(matches,start,30)));requests++;}
   for(int start=0;start<health.length();start+=30){send(client,new JSONObject().put("action","sync").put("health",slice(health,start,30)));requests++;}
+  for(int start=0;start<workout.length();start+=30){send(client,new JSONObject().put("action","sync").put("workout_status",slice(workout,start,30)));requests++;}
   if(requests==0)send(client,new JSONObject().put("action","snapshot"));
  }
  private void send(BridgeClient client,JSONObject request) throws Exception {
@@ -78,8 +80,18 @@ final class CoachRepository implements AutoCloseable {
    HashSet<String> sent=new HashSet<>();JSONArray changes=request.getJSONArray("health");for(int i=0;i<changes.length();i++)sent.add(changes.getJSONObject(i).getString("change_id"));
    JSONArray accepted=result.getJSONArray("ack_health");for(int i=0;i<accepted.length();i++)if(sent.contains(accepted.getString(i)))healthAck.put(accepted.getString(i));
   }
-  store.acceptSnapshot(snapshot,ack,array(request,"matches"),healthAck);
+  JSONArray workoutAck=new JSONArray();
+  if(request.has("workout_status")){
+   if(result.optJSONArray("ack_workout_status")==null||snapshot.optJSONArray("workout_status")==null)throw new IOException("Completion saved on phone; update the training database bridge before syncing completion");
+   HashSet<String> sent=new HashSet<>();JSONArray changes=request.getJSONArray("workout_status");for(int i=0;i<changes.length();i++)sent.add(changes.getJSONObject(i).getString("change_id"));
+   JSONArray accepted=result.getJSONArray("ack_workout_status");for(int i=0;i<accepted.length();i++)if(sent.contains(accepted.getString(i)))workoutAck.put(accepted.getString(i));
+  }
+  store.acceptSnapshot(snapshot,ack,array(request,"matches"),healthAck,workoutAck);
  }
+ JSONArray nutritionTargets() throws Exception {return array(store.get("nutrition-targets"),"records");}
+ String nutritionError() throws Exception {return store.get("status").optString("nutrition_error","");}
+ JSONArray workoutStatuses() throws Exception {return store.workoutStatuses();}
+ void saveWorkoutStatus(String workoutId,String status,Double actualMinutes,String note) throws Exception {JSONObject previous=null;JSONArray rows=workoutStatuses();for(int i=0;i<rows.length();i++)if(workoutId.equals(rows.getJSONObject(i).optString("workout_id")))previous=rows.getJSONObject(i);store.saveWorkoutStatus(WorkoutCompletion.change(workoutId,status,actualMinutes,note,previous,System.currentTimeMillis()));}
  JSONArray healthRecords() throws Exception {return store.healthRecords();}
  void saveHealth(JSONArray changes) throws Exception {store.saveHealth(changes);}
  private static JSONArray slice(JSONArray source,int start,int size) throws Exception {JSONArray out=new JSONArray();for(int i=start;i<Math.min(source.length(),start+size);i++)out.put(source.get(i));return out;}
@@ -161,8 +173,12 @@ final class CoachRepository implements AutoCloseable {
  private void archive(String id,byte[] data,String ext) throws Exception {File file=new File(context.getFilesDir(),"originals/"+id+"-"+hash(data)+"."+ext);if(!file.exists())atomic(file.toPath(),data);}
  private void atomic(Path path,byte[] data) throws IOException {Files.createDirectories(path.getParent());Path temp=path.resolveSibling(path.getFileName()+".tmp");Files.write(temp,data);Files.move(temp,path,StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.ATOMIC_MOVE);}
  void feedback(String activityId,String workoutId,int rpe,int soreness,int fatigue,String note) throws Exception {
+  feedback(activityId,workoutId,rpe,soreness,fatigue,note,false);
+ }
+ void feedback(String activityId,String workoutId,int rpe,int soreness,int fatigue,String note,boolean complete) throws Exception {
   String id=UUID.randomUUID().toString();JSONObject f=new JSONObject().put("feedback_id",id).put("activity_id",activityId).put("workout_id",workoutId).put("created_at",Instant.now().toString()).put("rpe",rpe).put("soreness",soreness).put("fatigue",fatigue).put("note",note);
-  store.queue(id,"feedback",f);
+  JSONObject completion=null;if(complete){JSONObject previous=null;JSONArray rows=workoutStatuses();for(int i=0;i<rows.length();i++)if(workoutId.equals(rows.getJSONObject(i).optString("workout_id")))previous=rows.getJSONObject(i);completion=WorkoutCompletion.change(workoutId,"completed",null,"",previous,System.currentTimeMillis());}
+  store.saveFeedback(f,completion);
  }
  void match(String activityId,String workoutId) throws Exception {store.queue("match:"+activityId,"match",new JSONObject().put("activity_id",activityId).put("workout_id",workoutId).put("updated_at",Instant.now().toString()));}
  @Override public void close(){store.close();}
