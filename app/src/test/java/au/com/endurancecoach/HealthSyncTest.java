@@ -21,7 +21,7 @@ public class HealthSyncTest {
   try{if(fail)return new Transport.Response(503,new byte[0]);JSONObject request=new JSONObject(new String(body,StandardCharsets.UTF_8));
    JSONArray health=request.optJSONArray("health"),ack=new JSONArray();if(health==null)health=new JSONArray();for(int i=0;i<health.length();i++)ack.put(health.getJSONObject(i).getString("change_id"));
    JSONObject snapshot=new JSONObject().put("plan",new JSONArray());JSONObject result=new JSONObject().put("ok",true).put("snapshot",snapshot);
-   if(supported){snapshot.put("health",health);result.put("ack_health",ack);}return new Transport.Response(200,result.toString().getBytes(StandardCharsets.UTF_8));
+   if(supported){snapshot.put("health_schema_version",2).put("health",health);result.put("ack_health",ack);}return new Transport.Response(200,result.toString().getBytes(StandardCharsets.UTF_8));
   }catch(JSONException e){throw new java.io.IOException(e);}
  },"https://script.google.com/macros/s/test/exec","synthetic-secret-12345678901234567890");}
  @Test public void offlineMealAndFavouriteSurviveRestart() throws Exception {
@@ -34,6 +34,16 @@ public class HealthSyncTest {
  @Test public void oldBridgeAndNetworkFailureNeverDiscardQueuedHealth() throws Exception {
   repo.saveHealth(new JSONArray().put(meal()));assertThrows(java.io.IOException.class,()->repo.syncCloud(bridge(false,false)));assertEquals(1,repo.store.pending("health").length());
   assertThrows(java.io.IOException.class,()->repo.syncCloud(bridge(true,true)));assertEquals(1,repo.store.pending("health").length());
+ }
+ @Test public void oldAckCapableBridgeMustNotReceiveNewMealFields() throws Exception {
+  final int[] writes={0};repo.saveHealth(new JSONArray().put(meal().put("meal_type","breakfast").put("protein_g",20)));
+  BridgeClient legacy=new BridgeClient((method,url,headers,body)->{try{
+   JSONObject request=new JSONObject(new String(body,StandardCharsets.UTF_8));if(request.has("health"))writes[0]++;
+   JSONArray ack=new JSONArray();JSONArray health=request.optJSONArray("health");if(health!=null)for(int i=0;i<health.length();i++)ack.put(health.getJSONObject(i).getString("change_id"));
+   JSONObject response=new JSONObject().put("ok",true).put("ack_health",ack).put("snapshot",new JSONObject().put("plan",new JSONArray()).put("health",new JSONArray()));
+   return new Transport.Response(200,response.toString().getBytes(StandardCharsets.UTF_8));
+  }catch(JSONException e){throw new java.io.IOException(e);}},"https://script.google.com/macros/s/test/exec","synthetic-secret-12345678901234567890");
+  assertThrows(java.io.IOException.class,()->repo.syncCloud(legacy));assertEquals(0,writes[0]);assertEquals(1,repo.store.pending("health").length());assertEquals("breakfast",repo.healthRecords().getJSONObject(0).getString("meal_type"));
  }
  @Test public void staleCloudSnapshotCannotResurrectDeletedMeal() throws Exception {
   JSONObject first=meal();repo.saveHealth(new JSONArray().put(first));repo.saveHealth(new JSONArray().put(HealthRecords.deleted(first,now)));

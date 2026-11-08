@@ -12,6 +12,9 @@ The exact ordered headers live in `backend/Code.gs: HEADERS`. The bridge checks 
 | Wellness | Per-day measured sleep/HRV/resting HR with source hash and coverage note |
 | Feedback | Immutable `feedback_id`; session or daily check-in, effort/soreness/fatigue 0–10, optional note |
 | Matches | Manual override per activity; empty workout ID explicitly means leave unmatched |
+| NutritionTargets | Coach-owned append-only effective baselines and date-specific targets; app read-only |
+| Health | Actual meals/favourites/weight ledger, independent from targets |
+| WorkoutStatus | Completion/skip/reset ledger, independent from Plan and Garmin records |
 | Archive | Content-addressed original JSON file references in a private Drive folder |
 
 Workout types used by the app are `run`, `strength`, `recovery`. Other types display but do not automatically match. A `scheduled` optional run still appears with an optional label. Plan revision metadata records author, creation time and reason. Never edit a historical row to revise a workout; append a higher revision. Two different rows with the same workout/revision are rejected by the app.
@@ -25,3 +28,6 @@ Every original activity list/detail response is saved locally with a content has
 Snapshot currently returns the latest 500 activities and 60 wellness days, all plan revisions and feedback. The first Garmin import covers 30 activity days and 7 wellness days; subsequent syncs start from the last successful import with 7 activity days and 3 wellness days of overlap, catching up after longer offline gaps. Transient wellness failures retain retry dates. This is a personal MVP rather than an unlimited historical archive browser.
 
 Recovery diagnostic rows may have a date and coverage note while every measurement is null. They are import attempts, not measured recovery observations. The HTTP status and response shape include no keys, tokens or error bodies. Same-day unavailable fields retain earlier local/cloud measurements and are explicitly labelled retained. Summary `restingValue` is not accepted as measured resting HR because Garmin may substitute the daily minimum.
+
+
+Nutrition/Health/WorkoutStatus exact extended contracts and migration rules: [Health](HEALTH.md), [Coach handover](NUTRITION_COACH_HANDOVER.md). A fresh schema2 capability preflight runs before Health uploads; old acknowledgement-capable servers must not receive extended events. Nutrition validation errors do not roll back unrelated acknowledgements.

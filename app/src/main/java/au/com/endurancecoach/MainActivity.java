@@ -203,7 +203,7 @@ public final class MainActivity extends Activity {
         }
         if (syncDetailsPending != null) {
             try {
-                int count = repo.store.pending("feedback").length() + repo.store.pending("health").length();
+                int count = repo.store.pending("feedback").length() + repo.store.pending("health").length() + repo.store.pending("workout_status").length();
                 syncDetailsPending.setText(count + " entry change(s) waiting to sync");
                 syncDetailsPending.setVisibility(count == 0 ? View.GONE : View.VISIBLE);
             } catch (Exception ignored) { /* Keep the last known queue count. */ }
@@ -247,20 +247,53 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < events.length(); i++) if (events.getJSONObject(i).optBoolean("active")) return events.getJSONObject(i);
         return new JSONObject();
     }
-    private Set<String> completed(JSONObject s) throws Exception {
-        JSONObject m = matches(s); Set<String> ids = new HashSet<>();
-        for (Iterator<String> keys = m.keys(); keys.hasNext();) ids.add(m.getString(keys.next()));
-        return ids;
+    private JSONObject manualStatus(String workoutId) throws Exception {
+        JSONArray rows = WorkoutCompletion.current(repo.workoutStatuses());
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            if (workoutId.equals(row.optString("workout_id"))) return row;
+        }
+        return null;
+    }
+    private JSONObject matchedActivity(JSONObject snapshot, JSONObject workout) throws Exception {
+        JSONObject matched = matches(snapshot); JSONArray activities = CoachRepository.array(snapshot, "activities");
+        for (int i = 0; i < activities.length(); i++) {
+            JSONObject activity = activities.getJSONObject(i);
+            if (workout.optString("workout_id").equals(matched.optString(activity.optString("activity_id")))) return activity;
+        }
+        return null;
+    }
+    private WorkoutCompletion.Result completion(JSONObject snapshot, JSONObject workout) throws Exception {
+        return WorkoutCompletion.evaluate(workout, matchedActivity(snapshot, workout), manualStatus(workout.optString("workout_id")));
+    }
+    private Map<String, WorkoutCompletion.Result> completions(JSONObject snapshot, JSONArray workouts) throws Exception {
+        JSONObject links = matches(snapshot); Map<String, JSONObject> activities = new HashMap<>(), statuses = new HashMap<>();
+        JSONArray imported = CoachRepository.array(snapshot, "activities"), manual = WorkoutCompletion.current(repo.workoutStatuses());
+        for (int i = 0; i < imported.length(); i++) {
+            JSONObject activity = imported.getJSONObject(i); String id = links.optString(activity.optString("activity_id"));
+            if (!id.isEmpty()) activities.put(id, activity);
+        }
+        for (int i = 0; i < manual.length(); i++) { JSONObject row = manual.getJSONObject(i); statuses.put(row.optString("workout_id"), row); }
+        Map<String, WorkoutCompletion.Result> results = new HashMap<>();
+        for (int i = 0; i < workouts.length(); i++) {
+            JSONObject workout = workouts.getJSONObject(i); String id = workout.optString("workout_id");
+            results.put(id, WorkoutCompletion.evaluate(workout, activities.get(id), statuses.get(id)));
+        }
+        return results;
+    }
+    private boolean canRecordCompletion(JSONObject workout) {
+        return !LocalDate.parse(workout.optString("date")).isAfter(today());
     }
     private void todayScreen(JSONObject s) throws Exception {
-        JSONArray plan = plan(s); Set<String> completed = completed(s); JSONObject next = null;
+        JSONArray plan = plan(s); Map<String, WorkoutCompletion.Result> outcomes = completions(s, plan); JSONObject next = null;
         for (int i = 0; i < plan.length(); i++) {
             JSONObject w = plan.getJSONObject(i);
-            if (!LocalDate.parse(w.getString("date")).isBefore(today()) && !completed.contains(w.getString("workout_id"))) { next = w; break; }
+            WorkoutCompletion.Result result = outcomes.get(w.getString("workout_id"));
+            if (!LocalDate.parse(w.getString("date")).isBefore(today()) && !result.completed && !result.skipped) { next = w; break; }
         }
         section("NEXT UP");
         if (next == null) notice("No upcoming workout. Your next session will appear when the plan is updated.");
-        else workout(next, false, true);
+        else workout(next, outcomes.get(next.getString("workout_id")), true);
         content.addView(button("Daily check-in", () -> feedback("", "checkin-" + today()), true));
         JSONObject event = event(s);
         if (event.has("event_id")) {
@@ -277,26 +310,95 @@ public final class MainActivity extends Activity {
                     event.optDouble("primary_km", 67.06), event.optInt("stretch_yards", 12), event.optDouble("stretch_km", 80.47)), 13, theme.muted, false));
         }
     }
-    private void workout(JSONObject w, boolean completed, boolean featured) throws Exception {
+    private void workout(JSONObject w, WorkoutCompletion.Result result, boolean featured) throws Exception {
         LinearLayout c = card(featured ? theme.accentSurface : theme.surface);
         String meta = dayLabel(w.getString("date")) + " · " + typeLabel(w.getString("type"))
-                + (w.optBoolean("optional") ? " · Optional" : "") + (completed ? " · Completed" : "");
+                + (w.optBoolean("optional") ? " · Optional" : "");
         c.addView(text(meta, 12, theme.accent, true));
         c.addView(text(w.optString("title", "Workout"), featured ? 25 : 19, theme.ink, true));
-        if (w.optInt("duration_min") > 0) c.addView(text(w.optInt("duration_min") + " min", 24, theme.ink, true));
+        if (!result.label.isEmpty()) c.addView(text(result.label, 14, theme.accent, true));
+        if (w.optInt("duration_min") > 0) c.addView(text("Planned · " + w.optInt("duration_min") + " min", 21, theme.ink, true));
+        if (result.completed) c.addView(text(actualMinutes(result), 16, theme.ink, false));
         String intensity = w.optString("intensity", "");
         if (!intensity.isEmpty()) c.addView(text(intensity, 14, theme.muted, false));
         c.addView(button("Workout details", () -> workoutDetail(w)));
     }
+    private String actualMinutes(WorkoutCompletion.Result result) {
+        return "Actual · " + (result.actualMinutes == null ? "—" : Math.round(result.actualMinutes) + " min");
+    }
     private void workoutDetail(JSONObject workout) {
         try {
+            JSONObject snapshot = repo.snapshot(), activity = matchedActivity(snapshot, workout), manual = manualStatus(workout.optString("workout_id"));
+            WorkoutCompletion.Result result = WorkoutCompletion.evaluate(workout, activity, manual);
             LinearLayout box = dialogBox();
+            AlertDialog details = new AlertDialog.Builder(this).setTitle(workout.optString("title", "Workout"))
+                    .setView(scroll(box)).setPositiveButton("Close", null).create();
             box.addView(text(dayLabel(workout.getString("date")) + " · " + typeLabel(workout.optString("type")), 14, theme.accent, true));
-            if (workout.optInt("duration_min") > 0) box.addView(text(workout.optInt("duration_min") + " min", 24, theme.ink, true));
+            if (!result.label.isEmpty()) box.addView(text(result.label, 18, theme.accent, true));
+            if (workout.optInt("duration_min") > 0) box.addView(text("Planned · " + workout.optInt("duration_min") + " min", 24, theme.ink, true));
+            if (result.completed) box.addView(text(actualMinutes(result), 20, theme.ink, true));
             box.addView(text(workout.optString("intensity", ""), 16, theme.ink, false));
-            box.addView(button("Add feedback", () -> feedback("", workout.optString("workout_id")), true));
-            showDetails(workout.optString("title", "Workout"), box);
+            if (manual != null && !manual.optString("status").equals("scheduled")) {
+                box.addView(text("Manual choice", 13, theme.muted, false));
+                if (!manual.optString("note").isEmpty()) box.addView(text(manual.optString("note"), 14, theme.muted, false));
+            }
+            if (activity != null) {
+                box.addView(text("Matched activity · " + activity.optString("name", "Garmin activity"), 14, theme.muted, false));
+                box.addView(button("View matched activity", () -> { details.dismiss(); activityDetail(activity); }));
+            }
+            box.addView(button("Add feedback", () -> feedback("", workout.optString("workout_id"), details), true));
+            if (canRecordCompletion(workout)) {
+                box.addView(button("Mark completed", () -> completionForm(workout, "completed", details)));
+                box.addView(button("Skip session", () -> completionForm(workout, "skipped", details)));
+                if (manual != null && !manual.optString("status").equals("scheduled"))
+                    box.addView(button("Reset completion", () -> saveCompletion(workout, "scheduled", null, "", null, details)));
+            }
+            details.show();
         } catch (Exception e) { toast("Workout details unavailable"); }
+    }
+    private void completionForm(JSONObject workout, String status, AlertDialog parent) {
+        try {
+            if (!canRecordCompletion(workout)) return;
+            boolean completed = status.equals("completed"); JSONObject previous = manualStatus(workout.optString("workout_id"));
+            LinearLayout box = dialogBox(); EditText minutes;
+            if (completed) {
+                box.addView(text("Actual minutes (optional)", 14, theme.ink, true));
+                minutes = field(box, "Leave blank if unknown", false);
+                minutes.setContentDescription("Actual minutes (optional)");
+                minutes.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                if (previous != null && previous.optString("status").equals("completed") && !previous.isNull("actual_duration_min"))
+                    minutes.setText(String.valueOf(previous.optDouble("actual_duration_min")));
+                box.addView(text("Leave actual minutes blank if unknown.", 13, theme.muted, false));
+            } else {
+                minutes = null;
+                box.addView(text("A skipped session stays in your plan history.", 14, theme.muted, false));
+            }
+            EditText note = new EditText(this); note.setHint("Completion note (optional)"); note.setContentDescription("Completion note (optional)");
+            note.setTextColor(theme.ink); note.setHintTextColor(theme.muted); note.setTextSize(14);
+            note.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+            note.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(1000)});
+            if (previous != null && !previous.optString("status").equals("scheduled")) note.setText(previous.optString("note"));
+            box.addView(note);
+            AlertDialog form = new AlertDialog.Builder(this).setTitle(completed ? "Complete session" : "Skip session")
+                    .setView(scroll(box)).setNegativeButton("Cancel", null).setPositiveButton("Save", null).create();
+            form.setOnShowListener(d -> form.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                Double actual = null;
+                if (minutes != null && !minutes.getText().toString().trim().isEmpty()) {
+                    try { actual = Double.valueOf(minutes.getText().toString().trim()); }
+                    catch (NumberFormatException invalid) { minutes.setError("Enter actual minutes from 0 to 10,080"); return; }
+                    if (!Double.isFinite(actual) || actual < 0 || actual > 10080) { minutes.setError("Enter actual minutes from 0 to 10,080"); return; }
+                }
+                saveCompletion(workout, status, actual, note.getText().toString(), form, parent);
+            })); form.show();
+        } catch (Exception e) { toast("Completion form unavailable"); }
+    }
+    private void saveCompletion(JSONObject workout, String status, Double minutes, String note, AlertDialog form, AlertDialog parent) {
+        try {
+            if (!canRecordCompletion(workout)) return;
+            repo.saveWorkoutStatus(workout.optString("workout_id"), status, minutes, note);
+            if (form != null) form.dismiss(); parent.dismiss();
+            toast(status.equals("scheduled") ? "Completion reset" : "Session saved"); render(true); sync(false);
+        } catch (Exception e) { toast("Could not save completion. Please retry."); }
     }
     private void planScreen(JSONObject s) throws Exception {
         LinearLayout controls = row(); Button prev = button("‹", () -> { week = week.minusWeeks(1); render(); });
@@ -306,13 +408,13 @@ public final class MainActivity extends Activity {
         range.setGravity(Gravity.CENTER); controls.addView(range, new LinearLayout.LayoutParams(0, -2, 1));
         Button next = button("›", () -> { week = week.plusWeeks(1); render(); }); next.setContentDescription("Next week");
         controls.addView(next, new LinearLayout.LayoutParams(dp(48), dp(48))); content.addView(controls);
-        JSONArray p = plan(s); Set<String> done = completed(s);
+        JSONArray p = plan(s); Map<String, WorkoutCompletion.Result> outcomes = completions(s, p);
         for (int d = 0; d < 7; d++) {
             LocalDate date = week.plusDays(d); boolean any = false;
             section(date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)) + (date.equals(today()) ? " · Today" : ""));
             for (int i = 0; i < p.length(); i++) {
                 JSONObject w = p.getJSONObject(i);
-                if (w.getString("date").equals(date.toString())) { workout(w, done.contains(w.getString("workout_id")), false); any = true; }
+                if (w.getString("date").equals(date.toString())) { workout(w, outcomes.get(w.getString("workout_id")), false); any = true; }
             }
             if (!any) content.addView(text("Nothing scheduled", 13, theme.muted, false));
         }
@@ -468,7 +570,8 @@ public final class MainActivity extends Activity {
             }).show();
         } catch (Exception e) { toast("Could not read workouts"); }
     }
-    private void feedback(String activity, String workout) {
+    private void feedback(String activity, String workout) { feedback(activity, workout, null); }
+    private void feedback(String activity, String workout, AlertDialog parent) {
         LinearLayout box = dialogBox(); String[] names = {"Effort", "Soreness", "Fatigue"};
         String[] scales = {"0 rest · 10 maximum", "0 none · 10 extreme", "0 fresh · 10 exhausted"}; SeekBar[] sliders = new SeekBar[3];
         for (int i = 0; i < names.length; i++) {
@@ -485,13 +588,28 @@ public final class MainActivity extends Activity {
         note.setTextColor(theme.ink); note.setHintTextColor(theme.muted); note.setTextSize(14);
         note.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         note.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(2000)}); box.addView(note);
-        new AlertDialog.Builder(this).setTitle("Quick check-in").setView(scroll(box)).setNegativeButton("Cancel", null)
-                .setPositiveButton("Save", (dialog, which) -> {
-                    try {
-                        repo.feedback(activity, workout, sliders[0].getProgress(), sliders[1].getProgress(), sliders[2].getProgress(), note.getText().toString());
-                        toast("Check-in saved"); render(true); sync(false);
-                    } catch (Exception e) { toast("Could not save feedback. Please retry."); }
-                }).show();
+        CheckBox complete = new CheckBox(this); complete.setText("Mark session completed"); complete.setTextColor(theme.ink);
+        complete.setButtonTintList(ColorStateList.valueOf(theme.accent)); complete.setMinHeight(dp(48)); complete.setChecked(false);
+        boolean eligible = false;
+        try {
+            JSONObject snapshot = repo.snapshot(); JSONArray workouts = plan(snapshot);
+            for (int i = 0; i < workouts.length(); i++) {
+                JSONObject row = workouts.getJSONObject(i);
+                if (workout.equals(row.optString("workout_id")) && canRecordCompletion(row)
+                        && completion(snapshot, row).status.equals("scheduled")) { eligible = true; break; }
+            }
+        } catch (Exception ignored) { /* Feedback remains available when completion cannot be established. */ }
+        if (eligible) box.addView(complete);
+        final boolean canComplete = eligible;
+        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("Quick check-in").setView(scroll(box)).setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", null).create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            try {
+                repo.feedback(activity, workout, sliders[0].getProgress(), sliders[1].getProgress(), sliders[2].getProgress(), note.getText().toString(), canComplete && complete.isChecked());
+                dialog.dismiss(); if (parent != null) parent.dismiss();
+                toast("Check-in saved"); render(true); sync(false);
+            } catch (Exception e) { toast("Could not save feedback. Please retry."); }
+        })); dialog.show();
     }
     private void settings() {
         LinearLayout box = dialogBox(); int selected = Arrays.asList(CoachTheme.MODES).indexOf(CoachTheme.preference(this));

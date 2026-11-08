@@ -276,13 +276,25 @@ public class InterfaceTest {
             long now=System.currentTimeMillis(); JSONArray records=new JSONArray();
             for(int i=13;i>=0;i--){LocalDate date=today.minusDays(i);if(i%3!=0)records.put(au.com.endurancecoach.core.HealthRecords.weight(date,100-i*.1,null,now));
                 if(i%4!=0)records.put(au.com.endurancecoach.core.HealthRecords.meal(date,"Sample meal",400+i*20,1,"",null,now));}
+            records.put(au.com.endurancecoach.core.HealthRecords.meal(today,"Synthetic preview meal",650,1,"",null,now));
             repo.saveHealth(records);
+            LocalDate effective=today.minusDays(13);
+            JSONObject target=new JSONObject().put("target_id","baseline-"+effective).put("revision",1).put("scope","baseline").put("date",effective.toString())
+                    .put("calories_kcal",2300).put("protein_g",JSONObject.NULL).put("carbohydrate_g",JSONObject.NULL).put("fat_g",JSONObject.NULL)
+                    .put("weight_goal_kg",JSONObject.NULL).put("weight_goal_date","").put("weight_change_kg_per_week",JSONObject.NULL)
+                    .put("training_type","").put("exercise_included",true).put("source","Synthetic preview Coach")
+                    .put("created_at",effective+"T00:00:00.000Z").put("reason","Synthetic preview target").put("status","approved");
+            repo.store.acceptSnapshot(repo.snapshot().put("nutrition_targets",new JSONArray().put(target)),new JSONArray(),new JSONArray());
         }
         for(int mode:new int[]{0,1}){CoachTheme.save(context,mode);
             try(ActivityController<MainActivity> c=Robolectric.buildActivity(MainActivity.class).create()){
                 View root=c.get().getWindow().getDecorView();clickDescription(root,"Health");clickText(root,"Diary");capture(root,CoachTheme.MODES[mode]+"-health",640,1280);
-                assertNotNull(findText(root,"Logged calories"));assertNotNull(findText(root,"Breakfast · —"));
+                assertNotNull(findText(root,"Logged calories"));assertNotNull(findText(root,"Breakfast · —"));assertNotNull(findText(root,"Target · 2300 kcal"));assertNotNull(findText(root,"Remaining · 1650 kcal"));
                 clickText(root,"Weight");capture(root,CoachTheme.MODES[mode]+"-health-weight",640,1280);assertNotNull(findType(root,TrendView.class));
+                android.widget.ScrollView scroll=(android.widget.ScrollView)findType(root,android.widget.ScrollView.class);
+                View graph=findType(root,TrendView.class);android.graphics.Rect region=new android.graphics.Rect();graph.getDrawingRect(region);scroll.offsetDescendantRectToMyCoords(graph,region);
+                scroll.scrollTo(0,Math.max(0,region.top-(int)(80*context.getResources().getDisplayMetrics().density)));
+                capture(root,CoachTheme.MODES[mode]+"-health-weight-chart",640,1280);
                 for(String label:new String[]{"Today","Plan","Progress","Insights","Health"}){
                     View nav=findDescription(root,label);assertTrue(label,nav.getWidth()>=96&&nav.getHeight()>=96);
                 }

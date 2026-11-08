@@ -31,8 +31,8 @@ public class HealthDiaryTest {
  @Test public void approvedTargetIsReadOnlyAndRemainingUsesOnlyLoggedFood() throws Exception {
   JSONArray targets=new JSONArray().put(target());repo.store.acceptSnapshot(new JSONObject().put("plan",new JSONArray()).put("nutrition_targets",targets),new JSONArray(),new JSONArray());
   repo.saveHealth(new JSONArray().put(HealthRecords.meal(day,"Soup",500,1.5,"",null,System.currentTimeMillis())));render();
-  assertNotNull(find(root,"Target · 1900 kcal"));assertNotNull(find(root,"750 kcal"));assertNotNull(find(root,"Remaining · 1150 kcal"));assertNotNull(find(root,"Protein · 80 g"));assertNotNull(find(root,"Carbohydrate · 250 g"));assertNull(find(root,"Fat · 0 g"));
-  assertNotNull(find(root,"Source · Synthetic test coach"));assertNotNull(find(root,"Synthetic recovery target"));assertNotNull(find(root,"Training · Recovery"));assertNotNull(find(root,"Exercise calories are not added."));assertNull(find(root,"Set calorie goal"));assertEquals(0,writes);assertEquals(1,repo.store.pending("health").length());
+  assertNotNull(find(root,"Target · 1900 kcal"));assertNotNull(find(root,"750 kcal"));assertNotNull(find(root,"Remaining · 1150 kcal"));assertNotNull(find(root,"Macro targets · P 80 g · C 250 g"));assertNull(find(root,"Source · Synthetic test coach"));
+  assertNotNull(find(root,"Training · Recovery"));click(root,"Target details");assertNotNull(find(dialog(),"Source · Synthetic test coach"));assertNotNull(find(dialog(),"Synthetic recovery target"));assertNotNull(find(dialog(),"Exercise calories are not added."));assertNull(find(root,"Set calorie goal"));assertEquals(0,writes);assertEquals(1,repo.store.pending("health").length());
  }
  @Test public void staleNutritionKeepsLastTargetAndShowsSimpleWarning() throws Exception {
   repo.store.acceptSnapshot(new JSONObject().put("plan",new JSONArray()).put("nutrition_targets",new JSONArray().put(target())),new JSONArray(),new JSONArray());

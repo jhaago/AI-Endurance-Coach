@@ -22,7 +22,7 @@ final class CoachRepository implements AutoCloseable {
   JSONObject s=store.get("snapshot");
   if(!s.has("events")){
    JSONObject event=new JSONObject().put("event_id","herdys-2027").put("name","Herdy's Frontyard Ultra").put("date","2027-03-12").put("primary_yards",10).put("primary_km",67.06).put("stretch_yards",12).put("stretch_km",80.47).put("runs_per_week",3).put("active",true);
-   s.put("events",new JSONArray().put(event)).put("plan",new JSONArray());
+   s.put("events",new JSONArray().put(event));if(!s.has("plan"))s.put("plan",new JSONArray());
   }
   s.put("activities",merge(array(s,"activities"),array(store.get("local"),"activities"),"activity_id"));
   s.put("wellness",merge(array(s,"wellness"),array(store.get("local"),"wellness"),"date"));return s;
@@ -68,6 +68,9 @@ final class CoachRepository implements AutoCloseable {
     +uploadChanged(client,"wellness",array(local,"wellness"),"date",3);
   for(int start=0;start<feedback.length();start+=30){send(client,new JSONObject().put("action","sync").put("feedback",slice(feedback,start,30)));requests++;}
   for(int start=0;start<matches.length();start+=30){send(client,new JSONObject().put("action","sync").put("matches",slice(matches,start,30)));requests++;}
+  // The old bridge acknowledges A:K Health but silently drops newer meal fields.
+  // Verify current server capabilities before sending any immutable Health event.
+  if(health.length()>0){send(client,new JSONObject().put("action","snapshot"));requests++;if(store.get("snapshot").optInt("health_schema_version",0)<2)throw new IOException("Health saved on phone; update the training database bridge before syncing Health");}
   for(int start=0;start<health.length();start+=30){send(client,new JSONObject().put("action","sync").put("health",slice(health,start,30)));requests++;}
   for(int start=0;start<workout.length();start+=30){send(client,new JSONObject().put("action","sync").put("workout_status",slice(workout,start,30)));requests++;}
   if(requests==0)send(client,new JSONObject().put("action","snapshot"));

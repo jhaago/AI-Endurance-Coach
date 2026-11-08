@@ -12,7 +12,7 @@ var HEADERS = {
   NutritionTargets: ['target_id','revision','scope','date','calories_kcal','protein_g','carbohydrate_g','fat_g','weight_goal_kg','weight_goal_date','weight_change_kg_per_week','training_type','exercise_included','source','created_at','reason','status']
 };
 
-function doGet() { return output({ok:false,error:'Use authenticated POST'}); }
+function doGet() { return output({ok:false,error:'Use authenticated POST',bridge_version:'0.5.0'}); }
 function output(value) {return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);}
 function doPost(e) {
   var lock=null;
@@ -200,7 +200,7 @@ function currentChanges(changes,key) {
  return Array.from(latest.values());
 }
 function validNutritionTarget(t) {
- if(!t||['baseline','daily'].indexOf(t.scope)<0||!validDate(t.date)||t.target_id!==(t.scope==='baseline'?'baseline-':'nutrition-')+t.date||!Number.isSafeInteger(t.revision)||t.revision<1||typeof t.calories_kcal!=='number'||!isFinite(t.calories_kcal)||t.calories_kcal<=0||t.calories_kcal>20000)return false;
+ if(!t||['baseline','daily'].indexOf(t.scope)<0||!validDate(t.date)||t.target_id!==(t.scope==='baseline'?'baseline-':'nutrition-')+t.date||!Number.isSafeInteger(t.revision)||t.revision<1||t.revision>2147483647||typeof t.calories_kcal!=='number'||!isFinite(t.calories_kcal)||t.calories_kcal<=0||t.calories_kcal>20000)return false;
  if(!['protein_g','carbohydrate_g','fat_g'].every(function(k){return t[k]===null||(typeof t[k]==='number'&&isFinite(t[k])&&t[k]>=0&&t[k]<=5000);}))return false;
  return (t.weight_goal_kg===null||(typeof t.weight_goal_kg==='number'&&isFinite(t.weight_goal_kg)&&t.weight_goal_kg>0&&t.weight_goal_kg<=500))&&(t.weight_goal_date===''||validDate(t.weight_goal_date))&&(t.weight_change_kg_per_week===null||(typeof t.weight_change_kg_per_week==='number'&&isFinite(t.weight_change_kg_per_week)&&t.weight_change_kg_per_week>=-5&&t.weight_change_kg_per_week<=5))&&typeof t.training_type==='string'&&t.training_type.length<=120&&typeof t.exercise_included==='boolean'&&typeof t.source==='string'&&t.source.trim().length>0&&t.source.length<=120&&canonicalTime(t.created_at)&&typeof t.reason==='string'&&t.reason.length<=2000&&['approved','draft','cancelled'].indexOf(t.status)>=0;
 }
@@ -227,7 +227,7 @@ function archive(db,props,id,json) {
 }
 function snapshot(db) {
  var activities=records(db,'Activities').sort(function(a,b){return String(b.start_utc).localeCompare(String(a.start_utc));}).slice(0,500);
- var result={events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:currentWellness(db).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),workout_status:currentChanges(workoutStatusRecords(db),'workout_id'),server_time:new Date().toISOString()};
+ var result={bridge_version:'0.5.0',health_schema_version:2,events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:currentWellness(db).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),workout_status:currentChanges(workoutStatusRecords(db),'workout_id'),server_time:new Date().toISOString()};
  try {result.nutrition_targets=nutritionTargets(db);}catch(err){result.nutrition_error='Nutrition targets unavailable; ask your coach to check setup';}
  return result;
 }
@@ -256,5 +256,5 @@ function verifyCoachSetup() {
  var props=PropertiesService.getScriptProperties(),db=SpreadsheetApp.openById(props.getProperty('SPREADSHEET_ID'));
  var health=healthRecords(db),statuses=workoutStatusRecords(db),ready=true,nutrition=[];
  try {nutrition=nutritionTargets(db);}catch(err){ready=false;}
- return {ok:ready,health_changes:health.length,health_records:currentHealth(health).length,workout_status_changes:statuses.length,workout_status_records:currentChanges(statuses,'workout_id').length,nutrition_targets_ready:ready,nutrition_revisions:nutrition.length};
+ var result={ok:ready,health_changes:health.length,health_records:currentHealth(health).length,workout_status_changes:statuses.length,workout_status_records:currentChanges(statuses,'workout_id').length,nutrition_targets_ready:ready,nutrition_revisions:nutrition.length};console.log(JSON.stringify(result));return result;
 }

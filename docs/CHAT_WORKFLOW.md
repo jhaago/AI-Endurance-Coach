@@ -18,3 +18,6 @@ Writer contract:
 The phone cannot overwrite the plan through the bridge. Direct Google Sheets access remains editable by the owner, so append-only history is a workflow contract rather than a tamper-proof audit log. Two independent ChatGPT writers must not revise the same workout concurrently; duplicate revision conflicts are surfaced for correction instead of silently choosing a winner. Sheets file version history offers additional recovery.
 
 When setting a programme, read the latest actual weekly volume rather than treating an unusually long race as the habitual baseline. Keep club/day preferences in workout titles and instructions; record recovery gates and the provisional nature of later progression. Prefer reviewing the next one or two weeks after subjective feedback and activity imports. Do not infer medical clearance or invent missing recovery metrics. Personal prescriptions and training data stay in the private training database, separate from source code and synthetic tests.
+
+
+Nutrition targets are managed in the normal Coach conversation through writable Google Sheets tools. Use [the nutrition handover](NUTRITION_COACH_HANDOVER.md). The app does not calculate or edit calorie targets; food and weight stay in the separate Health actuals ledger.
