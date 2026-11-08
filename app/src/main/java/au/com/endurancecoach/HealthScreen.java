@@ -54,7 +54,7 @@ final class HealthScreen {
   LinearLayout.LayoutParams end=new LinearLayout.LayoutParams(dp(52),dp(44));end.setMargins(dp(4),dp(3),0,dp(3));row.addView(next,end);
   parent.addView(row);
  }
- private void section(String section){preferences().edit().putString("section",section).apply();selectDay.accept(day);}
+ private void section(String section){preferences().edit().putString("section",section).apply();selectDay.accept("weight".equals(section)?LocalDate.now(PlanEngine.ZONE):day);}
  private void diary(LinearLayout parent,HealthRecords.Summary summary,JSONArray plan){
   buttons(parent,actualButton("Add meal",()->mealForm(null,null,"other")),actualButton("Quick add",this::quickAdd));
   LinearLayout totals=card(parent);totals.addView(text("Logged calories",14,false));totals.addView(text(amount(summary.calories,"kcal"),30,true));
