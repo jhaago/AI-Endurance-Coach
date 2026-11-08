@@ -1,4 +1,22 @@
 plugins { id 'com.android.application' }
+
+def enduranceSigning = [
+    keystorePath: System.getenv('ENDURANCE_SIGNING_KEYSTORE_PATH'),
+    storePassword: System.getenv('ENDURANCE_SIGNING_STORE_PASSWORD'),
+    keyAlias: System.getenv('ENDURANCE_SIGNING_KEY_ALIAS'),
+    keyPassword: System.getenv('ENDURANCE_SIGNING_KEY_PASSWORD')
+]
+def enduranceSigningReady = enduranceSigning.values().every { it != null && !it.trim().isEmpty() }
+
+gradle.taskGraph.whenReady { taskGraph ->
+    boolean releaseRequested = taskGraph.allTasks.any {
+        it.project.path == project.path && it.name.toLowerCase(Locale.ROOT).contains('release')
+    }
+    if (releaseRequested && !enduranceSigningReady) {
+        throw new GradleException('Release signing is not configured. Add the documented ENDURANCE_SIGNING_* environment values.')
+    }
+}
+
 android {
     namespace 'au.com.endurancecoach'
     compileSdk 35
@@ -7,6 +25,19 @@ android {
     buildFeatures { buildConfig true }
     testOptions { unitTests.includeAndroidResources = true }
     lint { abortOnError true }
+    signingConfigs {
+        release {
+            if (enduranceSigningReady) {
+                storeFile file(enduranceSigning.keystorePath)
+                storePassword enduranceSigning.storePassword
+                keyAlias enduranceSigning.keyAlias
+                keyPassword enduranceSigning.keyPassword
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig signingConfigs.release }
+    }
 }
 dependencies {
     implementation project(':core')

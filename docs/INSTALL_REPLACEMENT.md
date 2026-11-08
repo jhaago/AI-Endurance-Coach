@@ -16,4 +16,4 @@ Keep the current app installed until these checks are complete:
 
 The Health/nutrition/completion bridge deployment version3 is verified live. Confirm your phone can sync and the pending count clears before changing an installation. Uninstalling either app discards its unsynced local data.
 
-Future Endurance Coach updates must use the exact replacement signing key, already saved privately in the Endurance-Coach-Preview-Signing-Backup.zip archive. The key is the same for this normal package despite that archive's historical filename. Never use the ephemeral CI signing certificate for phone updates.
+Future Endurance Coach updates must use the exact replacement signing key, already saved privately in the Endurance-Coach-Preview-Signing-Backup.zip archive. The signed-release workflow uses encrypted GitHub Actions secrets for this key. Follow docs/ANDROID_SIGNING.md to configure it. Never use the ephemeral CI signing certificate for phone updates.
