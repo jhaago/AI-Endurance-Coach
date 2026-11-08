@@ -11,3 +11,5 @@ App uploads batches of 30, server accepts up to 100. Responses include `ack_heal
 Deploy: create the Health sheet/header once, paste updated Code.gs into the existing Apps Script project, save, run read-only `verifyHealthSetup`, and update the existing deployment to a new version while retaining its URL, access settings and secret. No new scopes are needed. Never paste the bridge secret into source, URLs, chat or GitHub. On the phone use Settings → Sync & import details → Refresh plan to upload Health without Garmin downloads.
 
 Current deployment status: Health sheet/header created and verified; updated bridge source tested locally but not yet deployed because Google sign-in expired. Actual phone/cloud Health synchronisation requires completing that deployment and checking one user-entered meal. Tests and previews use synthetic records only.
+
+Packaging: current builds use the normal Endurance Coach package. The old signing key is unavailable; this is a one-time replacement, not an in-place update over 0.3.x. See INSTALL_REPLACEMENT.md before changing the installation.
