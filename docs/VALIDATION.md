@@ -94,3 +94,7 @@ Remaining checks: install on phone without uninstalling; Settings→Sync & impor
 ## Version 0.5.1 Health date navigation
 
 The Health Diary now uses a compact previous-day / selected-date / next-day control. The selected date opens the calendar picker, and selecting a date still updates meal logging and date-specific targets. The Weight view no longer shows the date selector; historical measurements remain editable from the weight history. Android package version is 0.5.1/code10, using the existing replacement signer. This UI-only update does not require an Apps Script deployment. No test suite was run for this small layout change; the APK build and signing identity are verified separately.
+
+## Version 0.5.2 Sheet-managed weight goal
+
+The Weight screen now displays only the approved `weight_goal_kg` (and optional `weight_goal_date`) selected from `NutritionTargets`. The legacy goal stored with Health records no longer appears as a fallback, so an absent Sheet goal is shown as “No weight goal set in Sheets.” This is an Android-only change; no Sheet schema or Apps Script deployment change is required. No test suite was run for this UI-source change.
