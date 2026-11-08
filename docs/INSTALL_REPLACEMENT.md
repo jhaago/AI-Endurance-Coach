@@ -1,4 +1,8 @@
-# Endurance Coach 0.4.0 replacement
+# Endurance Coach installation and updates
+
+If Endurance Coach 0.4.0 is already installed with the backed-up replacement key, install 0.4.1 directly over it. Keep the app installed; settings and local data remain in place.
+
+For the older 0.3.x installation only:
 
 This APK has the normal name and package (`au.com.endurancecoach`). It contains the Health features and is signed using the new privately backed-up key. The original 0.3.x signing key is unavailable. Android cannot install this APK over that older app; renaming the file or increasing the version cannot fix the certificate mismatch.
 

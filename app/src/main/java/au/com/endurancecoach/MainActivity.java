@@ -32,7 +32,8 @@ public final class MainActivity extends Activity {
     private int progressWeekOffset;
     private LocalDate week;
     private LocalDate healthDay;
-    private boolean active, busy;
+    private boolean active;
+    private final SyncQueue syncQueue = new SyncQueue();
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable refresh = new Runnable() {
@@ -77,10 +78,14 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onResume() {
-        super.onResume(); active = true; sync(false); handler.postDelayed(refresh, 60000);
+        super.onResume(); active = true; sync(true); handler.postDelayed(refresh, 60000);
     }
     @Override protected void onPause() { active = false; handler.removeCallbacks(refresh); super.onPause(); }
-    @Override protected void onDestroy() { network.shutdownNow(); if (!busy) repo.close(); super.onDestroy(); }
+    @Override protected void onDestroy() {
+        // Keep already requested writes alive after Back/rotation; the final callback releases ownership.
+        if (!syncQueue.isRunning()) { network.shutdown(); repo.close(); }
+        super.onDestroy();
+    }
 
     private LocalDate today() { return LocalDate.now(PlanEngine.ZONE); }
     private int dp(float value) { return (int) (getResources().getDisplayMetrics().density * value + .5f); }
@@ -164,7 +169,7 @@ public final class MainActivity extends Activity {
             settings.setTextSize(12); settings.setBackground(ripple(theme.background, 14, false));
             head.addView(settings, new LinearLayout.LayoutParams(-2, -2)); root.addView(head);
             root.addView(text(TABS[tab], 30, theme.ink, true));
-            updateStatus(busy ? "Syncing…" : currentSyncMessage.isEmpty()
+            updateStatus(syncQueue.isRunning() ? "Syncing…" : currentSyncMessage.isEmpty()
                     ? repo.store.get("status").optString("message", "") : currentSyncMessage);
             screenScroll = new ScrollView(this); screenScroll.setFillViewport(true);
             screenScroll.setClipToPadding(false); screenScroll.setPadding(0, dp(6), 0, dp(12));
@@ -516,7 +521,7 @@ public final class MainActivity extends Activity {
             TextView pending = text("", 14, theme.muted, false); syncDetailsPending = pending; box.addView(pending);
             updateStatus(message.getText().toString());
             box.addView(text("Automatic sync", 16, theme.ink, true));
-            box.addView(text("The plan refreshes at launch and each minute while open. Garmin sync runs about every 6 hours; Android may delay background work.", 14, theme.muted, false));
+            box.addView(text("Garmin syncs when you open or return to the app, with a background check about every 6 hours. The plan and your notes also refresh each minute while open. Your watch must sync to Garmin Connect first. Activity names come from Garmin, including when you also use Strava.", 14, theme.muted, false));
             box.addView(button("Sync Garmin + plan", () -> sync(true), true));
             box.addView(button("Refresh plan", () -> sync(false)));
             List<JSONObject> days = wellness(repo.snapshot());
@@ -588,13 +593,24 @@ public final class MainActivity extends Activity {
         } catch (Exception e) { toast("See project third-party notices"); }
     }
     private void sync(boolean garmin) {
-        if (busy) return; busy = true; updateStatus("Syncing…");
+        if (isDestroyed() || !syncQueue.request(garmin)) return;
+        startSync(garmin);
+    }
+    private void startSync(boolean garmin) {
+        if (!isDestroyed()) updateStatus("Syncing…");
         network.submit(() -> {
             String message;
             try { message = repo.sync(garmin); }
             catch (Exception e) { message = e instanceof java.io.IOException ? e.getMessage() : "Sync incomplete. Your local records are retained; retry when connected."; }
             final String result = message;
-            handler.post(() -> { busy = false; if (!isDestroyed()) { render(true); updateStatus(result); } else repo.close(); });
+            handler.post(() -> {
+                Boolean next = syncQueue.complete();
+                if (!isDestroyed()) {
+                    render(true); updateStatus(result);
+                }
+                if (next != null) startSync(next);
+                else if (isDestroyed()) { network.shutdown(); repo.close(); }
+            });
         });
     }
     private String value(JSONObject row, String key, double scale, String unit) {

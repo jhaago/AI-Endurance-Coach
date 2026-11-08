@@ -13,8 +13,10 @@ import java.util.concurrent.locks.ReentrantLock;
 
 final class CoachRepository implements AutoCloseable {
  private static final ReentrantLock SYNC=new ReentrantLock();
- final LocalStore store; final Vault vault;private final Context context;private final Transport transport=new HttpsTransport();
- CoachRepository(Context context){this.context=context.getApplicationContext();store=new LocalStore(context);vault=new Vault(context);}
+ interface Credentials {String get(String name) throws Exception;}
+ final LocalStore store; final Vault vault;private final Context context;private final Transport transport;private final Credentials credentials;
+ CoachRepository(Context context){this(context,new HttpsTransport(),null);}
+ CoachRepository(Context context,Transport transport,Credentials credentials){this.context=context.getApplicationContext();store=new LocalStore(context);vault=new Vault(context);this.transport=transport;this.credentials=credentials==null?vault::get:credentials;}
  static JSONArray array(JSONObject object,String key){JSONArray a=object.optJSONArray(key);return a==null?new JSONArray():a;}
  JSONObject snapshot() throws Exception {
   JSONObject s=store.get("snapshot");
@@ -32,22 +34,30 @@ final class CoachRepository implements AutoCloseable {
   LinkedHashMap<String,JSONObject> map=new LinkedHashMap<>();for(JSONArray a:new JSONArray[]{first,second})for(int i=0;i<a.length();i++){JSONObject v=a.getJSONObject(i);map.put(v.getString(key),v);}return new JSONArray(new ArrayList<>(map.values()));
  }
  String sync(boolean garmin) throws Exception {
-  if(!SYNC.tryLock())return "Sync already in progress";
+  SYNC.lockInterruptibly();
   try{
    ArrayList<String> warnings=new ArrayList<>();
-   if(garmin && !vault.get("garmin").isEmpty()){
+   Exception garminFailure=null;
+   if(garmin && !credentials.get("garmin").isEmpty()){
     try{importGarmin(warnings);store.put("status",store.get("status").put("garmin_message",warnings.isEmpty()?"Up to date":String.join(" · ",warnings)));warnings.clear();}
-    catch(Exception e){String error=e instanceof IOException?e.getMessage():"Garmin import incomplete; retry sync";store.put("status",store.get("status").put("garmin_message",error).put("message",error));throw e;}
+    catch(Exception e){
+     if(e instanceof InterruptedException||Thread.currentThread().isInterrupted())throw e;
+     String error=e instanceof IOException?e.getMessage():"Garmin import incomplete; retry sync";
+     store.put("status",store.get("status").put("garmin_message",error).put("message",error));garminFailure=e;
+    }
    }
-   String bridge=vault.get("bridge");
+   String bridge=credentials.get("bridge");
    if(!bridge.isEmpty()){
-    BridgeClient client=new BridgeClient(transport,bridge,vault.get("secret"));
+    BridgeClient client=new BridgeClient(transport,bridge,credentials.get("secret"));
     syncCloud(client);
     store.put("status",store.get("status").put("cloud_sync",Instant.now().toString()));
    }else warnings.add("Training database not connected; data stays on this phone");
-   if(garmin && vault.get("garmin").isEmpty())warnings.add("Garmin key not configured");
+   if(garmin && credentials.get("garmin").isEmpty())warnings.add("Garmin key not configured");
    String message=SyncStatus.message(store.get("status").optString("garmin_message",""),warnings);
-   store.put("status",store.get("status").put("message",message));return message;
+   store.put("status",store.get("status").put("message",message));
+   // Notes still upload after an import failure; background scheduling retains its retry signal.
+   if(garminFailure!=null)throw garminFailure;
+   return message;
   }finally{SYNC.unlock();}
  }
  // Each successful upload already returns a full snapshot. An idle refresh still needs one read.
@@ -80,7 +90,7 @@ final class CoachRepository implements AutoCloseable {
   return (changed.length()+batchSize-1)/batchSize;
  }
  private void importGarmin(List<String> warnings) throws Exception {
-  GarminClient client=new GarminClient(transport,vault.get("garmin"),()->System.currentTimeMillis()/1000);
+  GarminClient client=new GarminClient(transport,credentials.get("garmin"),()->System.currentTimeMillis()/1000);
   LocalDate today=LocalDate.now(PlanEngine.ZONE);JSONObject local=store.get("local");String last=store.get("status").optString("garmin_sync","");
   LocalDate detailStart=SyncWindow.start(today,last,6,30);
   LocalDate importStart=WeeklyProgress.importStart(today,last,store.get("status").optString("activity_start",""));
