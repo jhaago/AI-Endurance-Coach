@@ -28,6 +28,21 @@ public class HealthDiaryTest {
  }
  @Test public void recentCopyKeepsLegacyOtherSeparateFromOriginal() throws Exception {JSONObject legacy=HealthRecords.meal(day.minusDays(1),"Soup",300,1,"",null,System.currentTimeMillis());legacy.remove("meal_type");repo.saveHealth(new JSONArray().put(legacy));render();click(root,"Quick add");assertNotNull(find(dialog(),"Recent"));click(dialog(),"Soup · 300 kcal");((EditText)description(dialog(),"Portions")).setText("1.5");saveDialog();assertNotNull(find(root,"Other · 450 kcal"));assertEquals(2,repo.healthRecords().length());}
  @Test public void weightHistoryEditsOriginalDayAndLegacyGoalIsReadOnly() throws Exception {LocalDate prior=day.minusDays(4);repo.saveHealth(new JSONArray().put(HealthRecords.weight(prior,100,null,System.currentTimeMillis())).put(HealthRecords.weight(day,98,null,System.currentTimeMillis())).put(HealthRecords.goal(85,null,System.currentTimeMillis())));render();click(root,"Weight");assertNotNull(find(root,"7-day measured average · 99.0 kg"));assertNotNull(find(root,"2 weigh-ins in 7 days"));assertNotNull(find(root,"Weight goal · 85.0 kg"));assertNull(find(root,"Set goal weight"));click(root,prior+" · 100.0 kg");((EditText)description(dialog(),"Weight (kg)")).setText("99");saveDialog();JSONArray rows=repo.healthRecords();for(int i=0;i<rows.length();i++)if(rows.getJSONObject(i).getString("record_id").equals("weight:"+prior))assertEquals(99,rows.getJSONObject(i).getDouble("weight_kg"),0);assertEquals(LocalDate.now(PlanEngine.ZONE),day);}
+ @Test public void diaryCountsActiveFoodItemsAndMultipliesPortionsWithoutCountingFavourites() throws Exception {
+  long now=System.currentTimeMillis();
+  JSONObject chicken=HealthRecords.meal(day,"Nando's half chicken",740,1,"",null,now,"lunch");
+  JSONObject oldChips=HealthRecords.meal(day,"Old chips revision",999,1,"",null,now,"lunch");
+  JSONObject chips=HealthRecords.meal(day,"Regular chips",700,0.5,"",oldChips,now,"lunch");
+  JSONObject yoghurt=HealthRecords.meal(day,"Bulla mini frozen yoghurt",45,1,"",null,now,"lunch");
+  JSONObject removed=HealthRecords.meal(day,"Deleted snack",300,1,"",null,now,"lunch");
+  JSONObject deleted=HealthRecords.deleted(removed,now);
+  JSONObject favourite=HealthRecords.favourite("Saved favourite",250,"",null,now);
+  repo.saveHealth(new JSONArray().put(chicken).put(oldChips).put(chips).put(yoghurt).put(removed).put(deleted).put(favourite));
+  render();
+  assertNotNull(find(root,"3 food items logged"));
+  assertNull(find(root,"3 meals logged"));
+  assertNotNull(find(root,"Lunch · 1135 kcal"));
+ }
  @Test public void approvedTargetIsReadOnlyAndRemainingUsesOnlyLoggedFood() throws Exception {
   JSONArray targets=new JSONArray().put(target());repo.store.acceptSnapshot(new JSONObject().put("plan",new JSONArray()).put("nutrition_targets",targets),new JSONArray(),new JSONArray());
   repo.saveHealth(new JSONArray().put(HealthRecords.meal(day,"Soup",500,1.5,"",null,System.currentTimeMillis())));render();

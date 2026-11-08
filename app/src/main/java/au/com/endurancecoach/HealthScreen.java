@@ -58,7 +58,7 @@ final class HealthScreen {
  private void diary(LinearLayout parent,HealthRecords.Summary summary,JSONArray plan){
   buttons(parent,actualButton("Add meal",()->mealForm(null,null,"other")),actualButton("Quick add",this::quickAdd));
   LinearLayout totals=card(parent);totals.addView(text("Logged calories",14,false));totals.addView(text(amount(summary.calories,"kcal"),30,true));
-  totals.addView(text(summary.mealCount+" meal"+(summary.mealCount==1?"":"s")+" logged",13,false));
+  totals.addView(text(summary.mealCount+" food item"+(summary.mealCount==1?"":"s")+" logged",13,false));
   if(target==null)totals.addView(text("No approved nutrition target",18,true));
   else {
    totals.addView(text("Target · "+amount(target.calories,"kcal"),18,true));totals.addView(text("Remaining · "+amount(summary.calories==null?null:target.calories-summary.calories,"kcal"),16,false));
