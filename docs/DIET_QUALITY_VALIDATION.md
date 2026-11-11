@@ -13,9 +13,12 @@ chart accessibility summarises counts rather than every historical point;
 individual day details are available through Diary date navigation.
 
 The source checkout expired while awaiting explicit public-upload approval.
-Source was recovered from the build record; backend/core checks are repeated
-and CI will verify Android tests/lint/build again after publication. This is
-recovery of the approved implementation, not a new feature change.
+Source was recovered from the build record, and backend47/core80 passed again.
+After approval, the recovered source was published to feat/health-meals-preview
+at 1a41d53f062856addaba199346a11ca3e3c38bdc. GitHub Actions run91 passed
+bridge/core/Android tests, lint, debug assembly and JSON compatibility:
+https://github.com/jhaago/AI-Endurance-Coach/actions/runs/43012250333.
+The remote and recovered local source trees match.
 
 The saved APK0.7.0/code14 has SHA256
 9c47d85cc3e1e91ca8544d8b2a3033cfe1a9a6e4d5843abbe75e171d3fd90553.
@@ -26,6 +29,9 @@ before uninstalling one of those, because uninstall clears local data/settings.
 
 DietQuality A:W headers were created and read back in the existing workbook;
 no personal scores were seeded and no food, targets, weight or plans changed.
-The prepared bridge still requires deployment to the existing Apps Script web
-app, preserving URL/identity/access/secrets. Authenticated phone sync and actual
-phone interaction remain unverified until that activation is complete.
+The tested bridge source was saved and read back exactly in Apps Script.
+Read-only verifySetup completed with ok:true, including all worksheet headers.
+The existing web app deployment was successfully updated to version5 on
+11 November 2026, preserving its URL, execution identity and access settings.
+Authenticated phone sync and physical device interaction still require the
+user's device; no live personal assessment was seeded solely for testing.

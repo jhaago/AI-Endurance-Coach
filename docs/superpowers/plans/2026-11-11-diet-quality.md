@@ -13,8 +13,8 @@ Stack: Java17/Android/org.json, Apps Script, Node/JUnit/Robolectric.
 - [x] New worksheet headers created/verified without seeding scores.
 - [x] Original build: backend47/core80/Android81, lint, JSON and signed APK checks.
 - [x] Independent review; cached-history regression fixed and tested.
-- [ ] Publish to current development branch after explicit public-repository approval.
-- [ ] Deploy existing Apps Script web app after authenticated access is available.
+- [x] Published to current development branch after explicit public-repository approval; CI run91 passed.
+- [x] Existing Apps Script web app updated to version5; read-only setup check passed.
 - [ ] Confirm authenticated phone sync and physical device behaviour.
 
 Review focus: revision conflicts and rollback; local food edits/deletes/moves;
