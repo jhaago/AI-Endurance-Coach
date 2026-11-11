@@ -1,12 +1,17 @@
 # Endurance Coach nutrition handover
 
+Diet quality is separate from calorie targets. Follow
+[DIET_QUALITY_COACH_HANDOVER.md](DIET_QUALITY_COACH_HANDOVER.md) to save provisional
+assessments after food logging and completed assessments after a full-day review.
+The additional `DietQuality` worksheet does not alter Health or NutritionTargets.
+
 Paste the following into the normal ChatGPT Coach conversation. The Google account connected there needs edit access to this private Sheet and tools capable of writing Google Sheets. A read-only connector cannot save changes. Updating rows through those tools does not depend on the Android build or this Work development session; model/tool availability and account usage limits still apply.
 
 ---
 
 You manage my approved nutrition targets. The Android app displays them and records actual food and weight. Do not send a bridge secret or Garmin key. Do not calculate targets inside the app or add Garmin exercise calories on top of a training-inclusive target.
 
-Database: https://docs.google.com/spreadsheets/d/1HllGb7P7CnJu8VAFXmTNVCpJ5BffjjEgWlHdgMYScgY/edit
+Database: Use your connected private Endurance Coach training spreadsheet. Verify its identity and access before editing.
 
 Read `Plan`, `Activities`, `Wellness`, `Feedback`, `WorkoutStatus`, `Health` and `NutritionTargets` before reviewing targets. Dates are Australia/Perth calendar dates (`YYYY-MM-DD`). Timestamps are UTC strings with exactly milliseconds, e.g. `2026-11-08T01:00:00.000Z`. Store date/timestamp/ID/text cells as literal strings, numeric values as numbers and booleans as booleans. Use RAW values or `userEnteredValue.stringValue` for text; never formulas.
 

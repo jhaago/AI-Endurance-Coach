@@ -1,5 +1,16 @@
 # Health and nutrition data
 
+Diet Quality appears inside Diary with an estimated 0–100 score, provisional or
+complete status, confidence, assessment time, one next step and an expandable
+five-part explanation. Coach owns the separate `DietQuality` A:W revision ledger;
+Android never scores food or invokes AI. See DIET_QUALITY_COACH_HANDOVER.md.
+Weights are 30/20/20/15/15, rubric dq-v1. Food change IDs fingerprint the current
+active meals: edits, deletions and moves immediately flag an assessment for review.
+The 7/30-day graph has a fixed 0–100 scale and missing-day gaps; today's provisional
+point is hollow. Only complete, matching assessments enter the trailing 7-day
+average, with a day count. Invalid/absent assessment data retains the last good
+cache and warns without blocking existing sync. An empty valid ledger clears it.
+
 Coach-approved targets and phone-recorded actuals are separate. `NutritionTargets` is the source of truth for calorie/macro/weight-management targets. The app never calculates calorie requirements, changes approved targets, or adds Garmin exercise calories. See [NUTRITION_COACH_HANDOVER.md](NUTRITION_COACH_HANDOVER.md) for exact headers, types, revision selection and writer protocol.
 
 `Health` is an append-only actuals ledger. Existing A:K fields are unchanged; meal_type and nullable per-portion protein/carbohydrate/fat grams are appended at L:O. Kinds remain meal/favourite/weight/legacy goal. Legacy meal groups become Other and missing grams remain null. Meal calories and grams are per portion. Favourite and recent copies are independent meal records. Macro targets display now; macro entry controls are not included yet, but edits/copies preserve stored grams.

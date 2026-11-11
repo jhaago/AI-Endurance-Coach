@@ -20,10 +20,19 @@ gradle.taskGraph.whenReady { taskGraph ->
 android {
     namespace 'au.com.endurancecoach'
     compileSdk 35
-    defaultConfig { applicationId 'au.com.endurancecoach'; minSdk 26; targetSdk 35; versionCode 13; versionName '0.6.1'; resValue 'string', 'app_name', 'Endurance Coach' }
+    defaultConfig { applicationId 'au.com.endurancecoach'; minSdk 26; targetSdk 35; versionCode 14; versionName '0.7.0'; resValue 'string', 'app_name', 'Endurance Coach' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildFeatures { buildConfig true }
-    testOptions { unitTests.includeAndroidResources = true }
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            // Isolate Robolectric's native graphics and background activity state.
+            forkEvery = 1
+            systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+            timeout = java.time.Duration.ofMinutes(10)
+            testLogging { events 'started', 'failed', 'skipped' }
+        }
+    }
     lint { abortOnError true }
     signingConfigs {
         release {

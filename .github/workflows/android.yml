@@ -28,8 +28,12 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Verify bridge
         run: node --test backend/test/*.test.cjs
-      - name: Test and lint
-        run: ./gradlew :core:test :app:testDebugUnitTest :app:lintDebug
+      - name: Core tests
+        run: ./gradlew :core:test
+      - name: Android unit tests
+        run: ./gradlew :app:testDebugUnitTest
+      - name: Android lint
+        run: ./gradlew :app:lintDebug
       - name: Build debug APK
         if: ${{ !cancelled() }}
         run: ./gradlew :app:assembleDebug
@@ -40,7 +44,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: endurance-coach-0.6.1-debug
+          name: endurance-coach-0.7.0-debug
           path: app/build/outputs/apk/debug/app-debug.apk
   signed-release:
     if: >-
@@ -84,5 +88,5 @@ jobs:
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: endurance-coach-0.6.1-signed
+          name: endurance-coach-0.7.0-signed
           path: app/build/outputs/apk/release/app-release.apk

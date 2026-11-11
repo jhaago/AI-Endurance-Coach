@@ -69,6 +69,7 @@ final class HealthScreen {
   }
   totals.addView(text("Training · "+(target==null?NutritionTargets.trainingType(plan,day):target.trainingType),14,false));
   totals.addView(button("Target details",this::targetDetails));
+  try{new DietQualitySection(activity,repo,theme,day,()->selectDay.accept(day)).render(parent,records);}catch(Exception unavailable){parent.addView(text("Diet quality unavailable. Refresh to try again.",14,false));}
   List<JSONObject> meals=kind("meal");meals.removeIf(r->!day.toString().equals(r.optString("date")));meals.sort(Comparator.comparing(r->r.optString("updated_at")));
   for(int i=0;i<TYPES.length;i++){final String type=TYPES[i];List<JSONObject> group=new ArrayList<>();double total=0;for(JSONObject meal:meals)if(type.equals(meal.optString("meal_type","other"))){group.add(meal);total+=meal.optDouble("calories_kcal")*meal.optDouble("portions");}if(i==4&&group.isEmpty())continue;
    LinearLayout box=card(parent);box.addView(text(GROUPS[i]+" · "+amount(group.isEmpty()?null:total,"kcal"),18,true));

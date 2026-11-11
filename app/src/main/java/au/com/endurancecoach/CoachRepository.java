@@ -93,6 +93,8 @@ final class CoachRepository implements AutoCloseable {
  }
  JSONArray nutritionTargets() throws Exception {return array(store.get("nutrition-targets"),"records");}
  String nutritionError() throws Exception {return store.get("status").optString("nutrition_error","");}
+ JSONArray dietQuality() throws Exception {return array(store.get("diet-quality"),"records");}
+ String dietQualityError() throws Exception {return store.get("status").optString("diet_quality_error","");}
  JSONArray workoutStatuses() throws Exception {return store.workoutStatuses();}
  void saveWorkoutStatus(String workoutId,String status,Double actualMinutes,String note) throws Exception {JSONObject previous=null;JSONArray rows=workoutStatuses();for(int i=0;i<rows.length();i++)if(workoutId.equals(rows.getJSONObject(i).optString("workout_id")))previous=rows.getJSONObject(i);store.saveWorkoutStatus(WorkoutCompletion.change(workoutId,status,actualMinutes,note,previous,System.currentTimeMillis()));}
  JSONArray healthRecords() throws Exception {return store.healthRecords();}

@@ -9,6 +9,7 @@ import au.com.endurancecoach.core.JsonChunks;
 import au.com.endurancecoach.core.HealthRecords;
 import au.com.endurancecoach.core.NutritionTargets;
 import au.com.endurancecoach.core.WorkoutCompletion;
+import au.com.endurancecoach.core.DietQuality;
 
 final class LocalStore extends SQLiteOpenHelper {
  LocalStore(Context c){super(c.getApplicationContext(),"coach.db",null,1);}
@@ -47,7 +48,9 @@ final class LocalStore extends SQLiteOpenHelper {
    JSONArray statuses=WorkoutCompletion.current(workoutStatuses(),CoachRepository.array(snapshot,"workout_status"));
    JSONObject status=get("status");String nutritionError="Nutrition targets unavailable; previous targets retained";
    if(!snapshot.has("nutrition_error")&&snapshot.optJSONArray("nutrition_targets")!=null)try{put("nutrition-targets",new JSONObject().put("records",NutritionTargets.validate(snapshot.getJSONArray("nutrition_targets"))));nutritionError="";}catch(IllegalArgumentException invalid){nutritionError="Nutrition targets need attention in the training database; previous targets retained";}
-   put("status",status.put("nutrition_error",nutritionError));
+   String dietError="Diet quality unavailable; previous assessments retained";
+   if(!snapshot.has("diet_quality_error")&&snapshot.optJSONArray("diet_quality")!=null)try{put("diet-quality",new JSONObject().put("records",DietQuality.importLedger(CoachRepository.array(get("diet-quality"),"records"),snapshot.getJSONArray("diet_quality"))));dietError="";}catch(IllegalArgumentException invalid){dietError="Diet quality needs attention in Sheets; previous assessments retained";}
+   put("status",status.put("nutrition_error",nutritionError).put("diet_quality_error",dietError));
    put("snapshot",snapshot);put("health-local",new JSONObject().put("records",current));put("workout-local",new JSONObject().put("records",statuses));
    for(int i=0;i<feedback.length();i++)ack(feedback.getString(i));
    for(int i=0;i<healthAck.length();i++)ack("health:"+healthAck.getString(i));

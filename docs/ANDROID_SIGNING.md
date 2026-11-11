@@ -29,6 +29,6 @@ After saving all four secrets:
 
 After saving the four secrets, tell ChatGPT the secrets are set. A release commit beginning with `release:` on `feat/health-meals-preview` will start the signed build automatically. You can also start it manually from **Actions → Android MVP → Run workflow** and select that branch.
 
-Wait for the **signed-release** job, then download the `endurance-coach-0.6.1-signed` artifact.
+Wait for the **signed-release** job, then download the `endurance-coach-0.7.0-signed` artifact.
 
 The artifact contains `app-release.apk`, signed with the same persistent key as the existing app. Android can install it as an update, preserving app settings and local data. The separate debug APK artifact uses a temporary CI key and is not for updating the installed app.

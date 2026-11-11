@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 function harness(options={}){
  const tables={}; const files=[]; const writes=[];
- class Sheet {constructor(name,headers){this.name=name;this.rows=[headers.slice()];this.maxRows=options.maxRows||1000;} read(rows){return rows.map(r=>r.map(v=>options.nativeLiterals&&['Health','WorkoutStatus','NutritionTargets'].includes(this.name)&&typeof v==='string'&&v.startsWith("'")?v.slice(1):v));} getDataRange(){return {getValues:()=>this.read(this.rows)};} getMaxRows(){return this.maxRows;} insertRowsAfter(after,count){assert.equal(after,this.maxRows);this.maxRows+=count;} getLastRow(){return this.rows.length;} getRange(row,col,nr,nc){return {setValues:values=>{assert.ok(row+nr-1<=this.maxRows);assert.equal(values.length,nr);assert.ok(values.every(v=>v.length===nc));writes.push({sheet:this.name,row,col,nr,nc});values.forEach((v,i)=>this.rows[row-1+i]=v.slice());},getValues:()=>this.rows.slice(row-1,row-1+nr).map(r=>r.slice(col-1,col-1+nc))};} appendRow(row){this.rows.push(row);} }
+ class Sheet {constructor(name,headers){this.name=name;this.rows=[headers.slice()];this.maxRows=options.maxRows||1000;} read(rows){return rows.map(r=>r.map(v=>options.nativeLiterals&&['Health','WorkoutStatus','NutritionTargets','DietQuality'].includes(this.name)&&typeof v==='string'&&v.startsWith("'")?v.slice(1):v));} getDataRange(){return {getValues:()=>this.read(this.rows)};} getMaxRows(){return this.maxRows;} insertRowsAfter(after,count){assert.equal(after,this.maxRows);this.maxRows+=count;} getLastRow(){return this.rows.length;} getRange(row,col,nr,nc){return {setValues:values=>{assert.ok(row+nr-1<=this.maxRows);assert.equal(values.length,nr);assert.ok(values.every(v=>v.length===nc));writes.push({sheet:this.name,row,col,nr,nc});values.forEach((v,i)=>this.rows[row-1+i]=v.slice());},getValues:()=>this.rows.slice(row-1,row-1+nr).map(r=>r.slice(col-1,col-1+nc))};} appendRow(row){this.rows.push(row);} }
  const ctx={console, JSON,Date,Math,Map,Set, Error, Utilities:{DigestAlgorithm:{SHA_256:1},Charset:{UTF_8:1},computeDigest:(_,s)=>[...require('node:crypto').createHash('sha256').update(s).digest()],newBlob:(s,m,n)=>({s,m,n}),formatDate:(value,tz)=>new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(value)},
  PropertiesService:{getScriptProperties:()=>({getProperty:k=>({BRIDGE_SECRET:'x'.repeat(40),SPREADSHEET_ID:'sheet',ARCHIVE_FOLDER_ID:'folder'})[k]})},
  SpreadsheetApp:{openById:()=>({getSheetByName:name=>tables[name],getSpreadsheetTimeZone:()=>options.timezone||'Etc/UTC'})},
@@ -191,3 +191,29 @@ test('NutritionTargets ignores completely blank rows and remains unset with a va
 });
 
 test('snapshot advertises extended Health schema before any phone upload',()=>{const h=harness();const r=h.call({action:'snapshot'});assert.equal(r.snapshot.health_schema_version,2);assert.equal(r.snapshot.bridge_version,'0.6.0');});
+
+const diet=(overrides={})=>({assessment_id:'diet-quality-2026-11-11',revision:1,date:'2026-11-11',status:'provisional',score:70,fruit_veg_points:20,fibre_points:15,protein_calcium_points:15,fat_quality_points:10,discretionary_points:10,confidence:'medium',summary:'Synthetic assessment',strength:'Variety',improvement:'Add vegetables',fruit_veg_reason:'Synthetic produce',fibre_reason:'Synthetic grains',protein_calcium_reason:'Synthetic protein',fat_quality_reason:'Ingredients uncertain',discretionary_reason:'Training context considered',food_change_ids:'a|b',source:'Synthetic Coach',assessed_at:'2026-11-11T02:00:00.000Z',rubric_version:'dq-v1',...overrides});
+function seedDiet(h,rows){assert.ok(h.tables.DietQuality,'DietQuality schema registered');h.tables.DietQuality.rows.push(...rows.map(r=>h.ctx.HEADERS.DietQuality.map(k=>r[k])));}
+test('DietQuality empty ledger is explicit and assessment history remains read-only',()=>{
+ const h=harness();assert.deepEqual(h.call({action:'snapshot'}).snapshot.diet_quality,[]);
+ const rows=[diet(),diet({revision:2,status:'complete'}),diet({revision:3,status:'withdrawn'})];seedDiet(h,rows);
+ assert.deepEqual(h.call({action:'snapshot'}).snapshot.diet_quality,rows);assert.equal(h.writes.length,0);
+ for(const value of [null,[],rows]){const r=h.call({action:'sync',diet_quality:value,health:[health()]});assert.equal(r.error,'Invalid request');assert.equal(h.tables.Health.rows.length,1);}
+});
+test('DietQuality errors are nonfatal to food acknowledgements and normal snapshots',()=>{
+ for(const kind of ['missing','header','invalid','conflict']){const h=harness();
+  if(kind==='missing')delete h.tables.DietQuality;else if(kind==='header')h.tables.DietQuality.rows[0][0]='wrong';else seedDiet(h,kind==='invalid'?[diet({score:71})]:[diet(),diet({summary:'conflict'})]);
+  const r=h.call({action:'sync',health:[health()]});assert.equal(r.ok,true);assert.deepEqual(r.ack_health,[health().change_id]);assert.equal(typeof r.snapshot.diet_quality_error,'string');assert.ok(!('diet_quality' in r.snapshot));
+ }
+});
+test('DietQuality validates bounds canonical identity totals and required reasons',()=>{
+ const variants=[{revision:0},{revision:'1'},{score:71},{fruit_veg_points:31},{fat_quality_points:-1},{fibre_points:15.5},{date:'2026-02-30'},{status:'approved'},{confidence:'certain'},{food_change_ids:'b|a'},{food_change_ids:'a|a'},{food_change_ids:''},{assessed_at:'2026-11-11T02:00:00Z'},{rubric_version:'dq-v2'},{summary:''},{fruit_veg_reason:null}];
+ for(const override of variants){const h=harness();seedDiet(h,[diet(override)]);const r=h.call({action:'snapshot'});assert.ok(r.snapshot.diet_quality_error,JSON.stringify(override));}
+ const h=harness(),zero=diet({score:0,fruit_veg_points:0,fibre_points:0,protein_calcium_points:0,fat_quality_points:0,discretionary_points:0});seedDiet(h,[zero,zero]);assert.deepEqual(h.call({action:'snapshot'}).snapshot.diet_quality,[zero]);
+});
+for(const nativeLiterals of [false,true])test(`DietQuality literal text and typed Perth dates survive (native=${nativeLiterals})`,()=>{
+ const h=harness({nativeLiterals,timezone:'Australia/Perth'}),r=diet({summary:"'=literal"});assert.ok(h.tables.DietQuality);
+ h.tables.DietQuality.rows.push(h.ctx.HEADERS.DietQuality.map(k=>typeof r[k]==='string'?"'"+r[k]:r[k]));
+ assert.deepEqual(h.call({action:'snapshot'}).snapshot.diet_quality,[r]);
+ const typed=harness({timezone:'Australia/Perth'});seedDiet(typed,[diet({date:new Date('2026-11-10T16:00:00.000Z')})]);assert.equal(typed.call({action:'snapshot'}).snapshot.diet_quality[0].date,'2026-11-11');
+});

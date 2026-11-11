@@ -9,7 +9,8 @@ var HEADERS = {
   Archive: ['record_id','sha256','drive_file_id','created_at'],
   Health: ['change_id','record_id','kind','date','name','calories_kcal','portions','weight_kg','note','deleted','updated_at','meal_type','protein_g','carbohydrate_g','fat_g'],
   WorkoutStatus: ['change_id','workout_id','status','actual_duration_min','note','updated_at'],
-  NutritionTargets: ['target_id','revision','scope','date','calories_kcal','protein_g','carbohydrate_g','fat_g','weight_goal_kg','weight_goal_date','weight_change_kg_per_week','training_type','exercise_included','source','created_at','reason','status']
+  NutritionTargets: ['target_id','revision','scope','date','calories_kcal','protein_g','carbohydrate_g','fat_g','weight_goal_kg','weight_goal_date','weight_change_kg_per_week','training_type','exercise_included','source','created_at','reason','status'],
+  DietQuality: ['assessment_id','revision','date','status','score','fruit_veg_points','fibre_points','protein_calcium_points','fat_quality_points','discretionary_points','confidence','summary','strength','improvement','fruit_veg_reason','fibre_reason','protein_calcium_reason','fat_quality_reason','discretionary_reason','food_change_ids','source','assessed_at','rubric_version']
 };
 
 function doGet() { return output({ok:false,error:'Use authenticated POST',bridge_version:'0.6.0'}); }
@@ -93,7 +94,7 @@ function validDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.
 function validTime(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T/.test(value)&&value.endsWith('Z')&&!isNaN(Date.parse(value));}
 function finiteOrNull(value,min,max){return value===null||value===undefined||(typeof value==='number'&&isFinite(value)&&value>=min&&value<=max);}
 function validate(req,db) {
- if(Object.prototype.hasOwnProperty.call(req,'nutrition_targets'))throw Error('Invalid request');
+ if(Object.prototype.hasOwnProperty.call(req,'nutrition_targets')||Object.prototype.hasOwnProperty.call(req,'diet_quality'))throw Error('Invalid request');
  var p={activities:req.activities||[],wellness:req.wellness||[],feedback:req.feedback||[],matches:req.matches||[]};
  Object.keys(p).forEach(function(k){if(!Array.isArray(p[k])||p[k].length>100)throw Error('Invalid request');});
  p.activities.forEach(function(a){if(!validId(a.activity_id)||!validTime(a.start_utc)||typeof a.type!=='string'||!finiteOrNull(a.distance_m,0,10000000)||!finiteOrNull(a.duration_s,0,10000000)||!finiteOrNull(a.average_hr,0,300)||typeof(a.raw_json||'')!=='string'||(a.raw_json||'').length>1000000)throw Error('Invalid activity');});
@@ -218,6 +219,26 @@ function nutritionTargets(db) {
  return Array.from(unique.values());
 }
 
+// Coach-owned estimates are a separate optional ledger. Never accept phone writes.
+function validDietQuality(r) {
+ if(!r||typeof r!=='object'||r.assessment_id!=='diet-quality-'+r.date||!validDate(r.date)||!Number.isInteger(r.revision)||r.revision<1||r.revision>2147483647||['provisional','complete','withdrawn'].indexOf(r.status)<0||['low','medium','high'].indexOf(r.confidence)<0||r.rubric_version!=='dq-v1'||!canonicalTime(r.assessed_at))return false;
+ var components=['fruit_veg','fibre','protein_calcium','fat_quality','discretionary'],maximums=[30,20,20,15,15],sum=0;
+ for(var i=0;i<components.length;i++){var points=r[components[i]+'_points'],reason=r[components[i]+'_reason'];if(!Number.isInteger(points)||points<0||points>maximums[i]||typeof reason!=='string'||!reason.trim()||reason.length>500)return false;sum+=points;}
+ if(!Number.isInteger(r.score)||r.score!==sum)return false;
+ if(!['summary','strength','improvement','source'].every(function(k){return typeof r[k]==='string'&&r[k].trim().length>0&&r[k].length<=(k==='source'?120:k==='summary'?1000:500);}))return false;
+ if(typeof r.food_change_ids!=='string'||!r.food_change_ids||r.food_change_ids.length>10100)return false;
+ var ids=r.food_change_ids.split('|');return ids.length<=100&&ids.every(function(id,i){return validId(id)&&(i===0||id>ids[i-1]);});
+}
+function dietQuality(db) {
+ var values=sheet(db,'DietQuality').getDataRange().getValues(),unique=new Map();
+ values.slice(1).filter(function(r){return r.some(function(v){return v!==''&&v!==null&&v!==undefined;});}).forEach(function(row){
+  var r=decodeLiterals(recordFromRow('DietQuality',row,db),'DietQuality','assessment_id');if(!validDietQuality(r))throw Error('Invalid diet quality');
+  var key=r.assessment_id+':'+r.revision,old=unique.get(key);
+  if(old&&JSON.stringify(HEADERS.DietQuality.map(function(k){return old[k];}))!==JSON.stringify(HEADERS.DietQuality.map(function(k){return r[k];})))throw Error('Diet quality conflict');
+  if(!old)unique.set(key,r);
+ });return Array.from(unique.values());
+}
+
 function archive(db,props,id,json) {
  var digest=hash(json), record=id+':'+digest;
  if(find(db,'Archive','record_id',record))return;
@@ -229,6 +250,7 @@ function snapshot(db) {
  var activities=records(db,'Activities').sort(function(a,b){return String(b.start_utc).localeCompare(String(a.start_utc));}).slice(0,500);
  var result={bridge_version:'0.6.0',health_schema_version:2,events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:currentWellness(db).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),workout_status:currentChanges(workoutStatusRecords(db),'workout_id'),server_time:new Date().toISOString()};
  try {result.nutrition_targets=nutritionTargets(db);}catch(err){result.nutrition_error='Nutrition targets unavailable; ask your coach to check setup';}
+ try {result.diet_quality=dietQuality(db);}catch(err){result.diet_quality_error='Diet quality assessments unavailable; ask your coach to check setup';}
  return result;
 }
 
