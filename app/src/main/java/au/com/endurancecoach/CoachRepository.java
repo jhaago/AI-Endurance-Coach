@@ -53,6 +53,7 @@ final class CoachRepository implements AutoCloseable {
     store.put("status",store.get("status").put("cloud_sync",Instant.now().toString()));
    }else warnings.add("Training database not connected; data stays on this phone");
    if(garmin && credentials.get("garmin").isEmpty())warnings.add("Garmin key not configured");
+   String routeWarning=store.get("status").optString("route_error","");if(store.pending("route").length()>0&&!routeWarning.isEmpty())warnings.add(routeWarning);
    String nutritionWarning=nutritionError();if(!nutritionWarning.isEmpty())warnings.add(nutritionWarning);
    String message=SyncStatus.message(store.get("status").optString("garmin_message",""),warnings);
    store.put("status",store.get("status").put("message",message));
@@ -73,6 +74,14 @@ final class CoachRepository implements AutoCloseable {
   if(health.length()>0){send(client,new JSONObject().put("action","snapshot"));requests++;if(store.get("snapshot").optInt("health_schema_version",0)<2)throw new IOException("Health saved on phone; update the training database bridge before syncing Health");}
   for(int start=0;start<health.length();start+=30){send(client,new JSONObject().put("action","sync").put("health",slice(health,start,30)));requests++;}
   for(int start=0;start<workout.length();start+=30){send(client,new JSONObject().put("action","sync").put("workout_status",slice(workout,start,30)));requests++;}
+  JSONArray routes=store.pending("route");
+  if(routes.length()>0){
+   send(client,new JSONObject().put("action","snapshot"));requests++;
+   JSONObject fresh=store.get("snapshot");
+   if(fresh.optInt("route_schema_version",0)>=1&&!fresh.has("route_error")&&store.get("status").optString("route_error","").isEmpty()){
+    for(int start=0;start<routes.length();start+=5){send(client,new JSONObject().put("action","sync").put("route_changes",slice(routes,start,5)));requests++;}
+   }
+  }
   if(requests==0)send(client,new JSONObject().put("action","snapshot"));
  }
  private void send(BridgeClient client,JSONObject request) throws Exception {
@@ -89,7 +98,9 @@ final class CoachRepository implements AutoCloseable {
    HashSet<String> sent=new HashSet<>();JSONArray changes=request.getJSONArray("workout_status");for(int i=0;i<changes.length();i++)sent.add(changes.getJSONObject(i).getString("change_id"));
    JSONArray accepted=result.getJSONArray("ack_workout_status");for(int i=0;i<accepted.length();i++)if(sent.contains(accepted.getString(i)))workoutAck.put(accepted.getString(i));
   }
+  if(request.has("route_changes")&&(snapshot.optInt("route_schema_version",0)<1||snapshot.optJSONArray("route_changes")==null||snapshot.has("route_error")||result.optJSONArray("ack_routes")==null))throw new IOException("Routes saved on phone; update or check the route planner bridge");
   store.acceptSnapshot(snapshot,ack,array(request,"matches"),healthAck,workoutAck);
+  if(request.has("route_changes")&&store.get("status").optString("route_error","").isEmpty())store.ackRoutes(request.getJSONArray("route_changes"),result.getJSONArray("ack_routes"),snapshot);
  }
  JSONArray nutritionTargets() throws Exception {return array(store.get("nutrition-targets"),"records");}
  String nutritionError() throws Exception {return store.get("status").optString("nutrition_error","");}

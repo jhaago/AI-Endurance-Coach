@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 function harness(options={}){
  const tables={}; const files=[]; const writes=[];
- class Sheet {constructor(name,headers){this.name=name;this.rows=[headers.slice()];this.maxRows=options.maxRows||1000;} read(rows){return rows.map(r=>r.map(v=>options.nativeLiterals&&['Health','WorkoutStatus','NutritionTargets','DietQuality'].includes(this.name)&&typeof v==='string'&&v.startsWith("'")?v.slice(1):v));} getDataRange(){return {getValues:()=>this.read(this.rows)};} getMaxRows(){return this.maxRows;} insertRowsAfter(after,count){assert.equal(after,this.maxRows);this.maxRows+=count;} getLastRow(){return this.rows.length;} getRange(row,col,nr,nc){return {setValues:values=>{assert.ok(row+nr-1<=this.maxRows);assert.equal(values.length,nr);assert.ok(values.every(v=>v.length===nc));writes.push({sheet:this.name,row,col,nr,nc});values.forEach((v,i)=>this.rows[row-1+i]=v.slice());},getValues:()=>this.rows.slice(row-1,row-1+nr).map(r=>r.slice(col-1,col-1+nc))};} appendRow(row){this.rows.push(row);} }
+ class Sheet {constructor(name,headers){this.name=name;this.rows=[headers.slice()];this.maxRows=options.maxRows||1000;} read(rows){return rows.map(r=>r.map(v=>options.nativeLiterals&&['Health','WorkoutStatus','NutritionTargets','DietQuality','RoutePlanner'].includes(this.name)&&typeof v==='string'&&v.startsWith("'")?v.slice(1):v));} getDataRange(){return {getValues:()=>this.read(this.rows)};} getMaxRows(){return this.maxRows;} insertRowsAfter(after,count){assert.equal(after,this.maxRows);this.maxRows+=count;} getLastRow(){return this.rows.length;} getRange(row,col,nr,nc){return {setValues:values=>{assert.ok(row+nr-1<=this.maxRows);assert.equal(values.length,nr);assert.ok(values.every(v=>v.length===nc));writes.push({sheet:this.name,row,col,nr,nc});values.forEach((v,i)=>this.rows[row-1+i]=v.slice());},getValues:()=>this.rows.slice(row-1,row-1+nr).map(r=>r.slice(col-1,col-1+nc))};} appendRow(row){this.rows.push(row);} }
  const ctx={console, JSON,Date,Math,Map,Set, Error, Utilities:{DigestAlgorithm:{SHA_256:1},Charset:{UTF_8:1},computeDigest:(_,s)=>[...require('node:crypto').createHash('sha256').update(s).digest()],newBlob:(s,m,n)=>({s,m,n}),formatDate:(value,tz)=>new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(value)},
  PropertiesService:{getScriptProperties:()=>({getProperty:k=>({BRIDGE_SECRET:'x'.repeat(40),SPREADSHEET_ID:'sheet',ARCHIVE_FOLDER_ID:'folder'})[k]})},
  SpreadsheetApp:{openById:()=>({getSheetByName:name=>tables[name],getSpreadsheetTimeZone:()=>options.timezone||'Etc/UTC'})},
@@ -190,7 +190,7 @@ test('NutritionTargets ignores completely blank rows and remains unset with a va
  const h=harness();h.tables.NutritionTargets.rows.push(Array(17).fill(''));const r=h.call({action:'snapshot'});assert.deepEqual(r.snapshot.nutrition_targets,[]);assert.ok(!('nutrition_error' in r.snapshot));
 });
 
-test('snapshot advertises extended Health schema before any phone upload',()=>{const h=harness();const r=h.call({action:'snapshot'});assert.equal(r.snapshot.health_schema_version,2);assert.equal(r.snapshot.bridge_version,'0.6.0');});
+test('snapshot advertises extended Health schema before any phone upload',()=>{const h=harness();const r=h.call({action:'snapshot'});assert.equal(r.snapshot.health_schema_version,2);assert.equal(r.snapshot.bridge_version,'0.8.0');});
 
 const diet=(overrides={})=>({assessment_id:'diet-quality-2026-11-11',revision:1,date:'2026-11-11',status:'provisional',score:70,fruit_veg_points:20,fibre_points:15,protein_calcium_points:15,fat_quality_points:10,discretionary_points:10,confidence:'medium',summary:'Synthetic assessment',strength:'Variety',improvement:'Add vegetables',fruit_veg_reason:'Synthetic produce',fibre_reason:'Synthetic grains',protein_calcium_reason:'Synthetic protein',fat_quality_reason:'Ingredients uncertain',discretionary_reason:'Training context considered',food_change_ids:'a|b',source:'Synthetic Coach',assessed_at:'2026-11-11T02:00:00.000Z',rubric_version:'dq-v1',...overrides});
 function seedDiet(h,rows){assert.ok(h.tables.DietQuality,'DietQuality schema registered');h.tables.DietQuality.rows.push(...rows.map(r=>h.ctx.HEADERS.DietQuality.map(k=>r[k])));}
@@ -216,4 +216,27 @@ for(const nativeLiterals of [false,true])test(`DietQuality literal text and type
  h.tables.DietQuality.rows.push(h.ctx.HEADERS.DietQuality.map(k=>typeof r[k]==='string'?"'"+r[k]:r[k]));
  assert.deepEqual(h.call({action:'snapshot'}).snapshot.diet_quality,[r]);
  const typed=harness({timezone:'Australia/Perth'});seedDiet(typed,[diet({date:new Date('2026-11-10T16:00:00.000Z')})]);assert.equal(typed.call({action:'snapshot'}).snapshot.diet_quality[0].date,'2026-11-11');
+});
+
+const plannerRoute=()=>({name:'Park',source:'imported',points:[[-31.95,115.85,10],[-31.949,115.85,20]],waypoints:[],distance_m:111.2,ascent_m:10,terrain:'unknown',favourite:false,simplified:false,attribution:'GPX import',source_url:''});
+const routeChange=(overrides={})=>({change_id:'route-change-1',record_id:'route:1',kind:'route',payload_json:JSON.stringify(plannerRoute()),deleted:false,updated_at:'2026-11-11T12:00:00.000Z',...overrides});
+test('RoutePlanner immutable retry, tombstone and snapshot capability',()=>{
+ const h=harness();const c=routeChange();let r=h.call({action:'sync',route_changes:[c,c]});assert.equal(r.ok,true);assert.deepEqual(r.ack_routes,[c.change_id]);assert.equal(r.snapshot.route_schema_version,1);assert.deepEqual(r.snapshot.route_changes,[c]);
+ assert.equal(h.call({action:'sync',route_changes:[c]}).ok,true);assert.equal(h.tables.RoutePlanner.rows.length,2);
+ const deleted=routeChange({change_id:'route-change-2',deleted:true,updated_at:'2026-11-11T12:00:00.001Z'});r=h.call({action:'sync',route_changes:[deleted]});assert.deepEqual(r.snapshot.route_changes,[deleted]);assert.equal(h.tables.RoutePlanner.rows.length,3);
+ assert.deepEqual(h.call({action:'snapshot',route_changes:[routeChange({change_id:'unpersisted'})]}).ack_routes,[]);
+});
+test('RoutePlanner rejects conflicts and invalid mixed batch before any mutation',()=>{
+ const h=harness();h.call({action:'sync',route_changes:[routeChange()]});
+ assert.equal(h.call({action:'sync',route_changes:[routeChange({deleted:true})]}).error,'Route conflict');
+ for(const invalid of [routeChange({kind:'bad'}),routeChange({payload_json:'{}'}),routeChange({payload_json:JSON.stringify({...plannerRoute(),points:[[91,0],[0,0]]})}),routeChange({payload_json:'x'.repeat(45001)}),routeChange({record_id:'attachment:other',kind:'attachment'}),routeChange({updated_at:'2026-99-99T00:00:00.000Z'})]){
+  assert.equal(h.call({action:'sync',route_changes:[invalid],activities:[{activity_id:'123',start_utc:'2026-11-11T00:00:00Z',type:'running',raw_json:'{}'}]}).ok,false);assert.equal(h.tables.Activities.rows.length,1);assert.equal(h.files.length,0);
+ }
+});
+test('missing RoutePlanner schema leaves legacy sync available and never acknowledges route writes',()=>{
+ const h=harness();delete h.tables.RoutePlanner;let r=h.call({action:'snapshot'});assert.equal(r.ok,true);assert.equal(r.snapshot.route_schema_version,undefined);assert.ok(r.snapshot.route_error);assert.equal(h.call({action:'sync'}).ok,true);
+ assert.equal(h.call({action:'sync',route_changes:[routeChange()]}).ok,false);
+});
+for(const nativeLiterals of [false,true])test(`RoutePlanner literal payload survives exactly native=${nativeLiterals}`,()=>{
+ const h=harness({nativeLiterals});const c=routeChange({payload_json:JSON.stringify({...plannerRoute(),name:"'=Park"})});assert.deepEqual(h.call({action:'sync',route_changes:[c]}).snapshot.route_changes,[c]);
 });

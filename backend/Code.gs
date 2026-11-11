@@ -1,5 +1,6 @@
 /* Single-user bridge. Credentials belong ONLY in Script Properties. Never in this source. */
 var HEADERS = {
+  RoutePlanner: ['change_id','record_id','kind','payload_json','deleted','updated_at'],
   Events: ['event_id','name','date','primary_yards','primary_km','stretch_yards','stretch_km','runs_per_week','optional_fourth','timezone','active','primary_confidence_pct','stretch_confidence_pct','confidence_as_of','confidence_quality','confidence_reason'],
   Plan: ['workout_id','revision','event_id','date','type','title','duration_min','intensity','optional','status','author','created_at','reason'],
   Activities: ['activity_id','name','start_utc','type','distance_m','duration_s','pace_s_km','average_hr','elevation_m','cadence_spm','source_hash','updated_at'],
@@ -13,7 +14,7 @@ var HEADERS = {
   DietQuality: ['assessment_id','revision','date','status','score','fruit_veg_points','fibre_points','protein_calcium_points','fat_quality_points','discretionary_points','confidence','summary','strength','improvement','fruit_veg_reason','fibre_reason','protein_calcium_reason','fat_quality_reason','discretionary_reason','food_change_ids','source','assessed_at','rubric_version']
 };
 
-function doGet() { return output({ok:false,error:'Use authenticated POST',bridge_version:'0.6.0'}); }
+function doGet() { return output({ok:false,error:'Use authenticated POST',bridge_version:'0.8.0'}); }
 function output(value) {return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);}
 function doPost(e) {
   var lock=null;
@@ -36,11 +37,12 @@ function doPost(e) {
       payload.matches.forEach(function(m){upsert(db,'Matches','activity_id',m);});
       appendHealth(db,payload.health_new);
       appendLedger(db,'WorkoutStatus',payload.workout_status_new);
+      appendLedger(db,'RoutePlanner',payload.routes_new);
     }
-    return output({ok:true,ack_feedback:payload.feedback.map(function(f){return f.feedback_id;}),ack_health:req.action==='sync'?payload.health_ack:[],ack_workout_status:req.action==='sync'?payload.workout_status_ack:[],snapshot:snapshot(db)});
+    return output({ok:true,ack_routes:req.action==='sync'?payload.routes_ack:[],ack_feedback:payload.feedback.map(function(f){return f.feedback_id;}),ack_health:req.action==='sync'?payload.health_ack:[],ack_workout_status:req.action==='sync'?payload.workout_status_ack:[],snapshot:snapshot(db)});
   } catch(err) {
     // No stack, upstream response, tokens, or arbitrary exception text in the public response.
-    var allowed=['Unauthorized','Invalid request','Invalid action','Invalid activity','Invalid wellness','Invalid feedback','Feedback conflict','Invalid match','Invalid health','Health conflict','Invalid workout status','Workout status conflict','Schema mismatch'];
+    var allowed=['Unauthorized','Invalid request','Invalid action','Invalid activity','Invalid wellness','Invalid feedback','Feedback conflict','Invalid match','Invalid health','Health conflict','Invalid workout status','Workout status conflict','Schema mismatch','Invalid route change','Route conflict'];
     return output({ok:false,error:allowed.indexOf(err.message)>=0?err.message:'Bridge unavailable; check setup and retry'});
   } finally {if(lock)lock.releaseLock();}
 }
@@ -112,6 +114,8 @@ function validate(req,db) {
  p.workout_status=req.workout_status===undefined?[]:req.workout_status;
  var statuses=validateLedger(p.workout_status,db,'WorkoutStatus',workoutStatusRecords,validWorkoutStatus,'Invalid workout status','Workout status conflict');
  p.workout_status_new=statuses.changes;p.workout_status_ack=statuses.ack;
+ p.routes_new=[];p.routes_ack=[];
+ if(req.route_changes!==undefined){var routes=validateLedger(req.route_changes,db,'RoutePlanner',routeRecords,validRouteChange,'Invalid route change','Route conflict');p.routes_new=routes.changes;p.routes_ack=routes.ack;}
  return p;
 }
 
@@ -248,7 +252,8 @@ function archive(db,props,id,json) {
 }
 function snapshot(db) {
  var activities=records(db,'Activities').sort(function(a,b){return String(b.start_utc).localeCompare(String(a.start_utc));}).slice(0,500);
- var result={bridge_version:'0.6.0',health_schema_version:2,events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:currentWellness(db).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),workout_status:currentChanges(workoutStatusRecords(db),'workout_id'),server_time:new Date().toISOString()};
+ var result={bridge_version:'0.8.0',health_schema_version:2,events:records(db,'Events'),plan:records(db,'Plan'),activities:activities,wellness:currentWellness(db).slice(0,60),feedback:records(db,'Feedback'),matches:records(db,'Matches'),health:currentHealth(healthRecords(db)),workout_status:currentChanges(workoutStatusRecords(db),'workout_id'),server_time:new Date().toISOString()};
+ try {result.route_changes=currentChanges(routeRecords(db),'record_id');result.route_schema_version=1;}catch(err){result.route_error='Routes saved on phone; update or check the route planner bridge';}
  try {result.nutrition_targets=nutritionTargets(db);}catch(err){result.nutrition_error='Nutrition targets unavailable; ask your coach to check setup';}
  try {result.diet_quality=dietQuality(db);}catch(err){result.diet_quality_error='Diet quality assessments unavailable; ask your coach to check setup';}
  return result;
@@ -279,4 +284,27 @@ function verifyCoachSetup() {
  var health=healthRecords(db),statuses=workoutStatusRecords(db),ready=true,nutrition=[];
  try {nutrition=nutritionTargets(db);}catch(err){ready=false;}
  var result={ok:ready,health_changes:health.length,health_records:currentHealth(health).length,workout_status_changes:statuses.length,workout_status_records:currentChanges(statuses,'workout_id').length,nutrition_targets_ready:ready,nutrition_revisions:nutrition.length};console.log(JSON.stringify(result));return result;
+}
+
+
+// Route planner uses a separate immutable ledger, including tombstones.
+function routeRecords(db) {var rows=literalRecords(db,'RoutePlanner');if(!rows.every(validRouteChange))throw Error('Invalid route change');return rows;}
+function routeNumber(o,k,min,max){return !!o&&typeof o[k]==='number'&&isFinite(o[k])&&o[k]>=min&&o[k]<=max;}
+function routeText(o,k,min,max){return !!o&&typeof o[k]==='string'&&o[k].length>=min&&o[k].length<=max;}
+function routePoint(p){return Array.isArray(p)&&p.length>=2&&p.length<=3&&typeof p[0]==='number'&&isFinite(p[0])&&Math.abs(p[0])<=85.05112878&&typeof p[1]==='number'&&isFinite(p[1])&&Math.abs(p[1])<=180&&(p.length<3||p[2]===null||typeof p[2]==='number'&&isFinite(p[2])&&p[2]>=-500&&p[2]<=10000);}
+function validRoute(r){
+ if(!r||!routeText(r,'name',1,120)||['imported','established','generated','drawn'].indexOf(r.source)<0||!routeText(r,'attribution',1,500)||!routeText(r,'source_url',0,1000)||r.source_url!==''&&!/^https:\/\/www\.openstreetmap\.org\/relation\/[0-9]+$/.test(r.source_url)||typeof r.favourite!=='boolean'||typeof r.simplified!=='boolean'||['unknown','road','path','trail','mixed'].indexOf(r.terrain)<0)return false;
+ if(!Array.isArray(r.points)||r.points.length<2||r.points.length>1000||!r.points.every(routePoint)||!Array.isArray(r.waypoints)||r.waypoints.length>24||!r.waypoints.every(routePoint)||!routeNumber(r,'distance_m',0.01,1000000)||!(r.ascent_m===null||routeNumber(r,'ascent_m',0,100000)))return false;
+ return r.profile===undefined||Array.isArray(r.profile)&&r.profile.length<=200&&r.profile.every(routePoint);
+}
+function validRouteRequirements(r){return !!r&&routeNumber(r,'target_km',0.1,200)&&routeNumber(r,'radius_km',0.1,100)&&['any','road','path','trail'].indexOf(r.terrain)>=0&&['any','flat','rolling','hilly'].indexOf(r.climbing)>=0&&['any','loop','out_back','point_to_point'].indexOf(r.shape)>=0&&(r.start===undefined||routePoint(r.start))&&(r.duration_min===undefined||routeNumber(r,'duration_min',1,1440));}
+function validRouteChange(c){
+ if(!c||typeof c.change_id!=='string'||!validId(c.change_id)||typeof c.record_id!=='string'||!validId(c.record_id)||typeof c.deleted!=='boolean'||!canonicalTime(c.updated_at)||!routeText(c,'payload_json',2,45000))return false;
+ try{var p=JSON.parse(c.payload_json);if(c.kind==='route')return c.record_id.indexOf('route:')===0&&validRoute(p);if(c.kind==='attachment')return validId(p.workout_id)&&c.record_id==='attachment:'+p.workout_id&&validRoute(p.route)&&validRouteRequirements(p.requirements);if(c.kind==='preference')return c.record_id.indexOf('preference:')===0&&validRouteRequirements(p);return false;}catch(e){return false;}
+}
+// Editor-only, additive migration. No existing worksheet or personal row is changed.
+function setupRoutePlanner(){
+ var props=PropertiesService.getScriptProperties(),db=SpreadsheetApp.openById(props.getProperty('SPREADSHEET_ID'));
+ if(!db.getSheetByName('RoutePlanner'))db.insertSheet('RoutePlanner').getRange(1,1,1,HEADERS.RoutePlanner.length).setValues([HEADERS.RoutePlanner]);
+ sheet(db,'RoutePlanner');return {ok:true,route_schema_version:1};
 }

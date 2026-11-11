@@ -10,6 +10,7 @@ import au.com.endurancecoach.core.HealthRecords;
 import au.com.endurancecoach.core.NutritionTargets;
 import au.com.endurancecoach.core.WorkoutCompletion;
 import au.com.endurancecoach.core.DietQuality;
+import au.com.endurancecoach.core.RoutePlan;
 
 final class LocalStore extends SQLiteOpenHelper {
  LocalStore(Context c){super(c.getApplicationContext(),"coach.db",null,1);}
@@ -22,6 +23,29 @@ final class LocalStore extends SQLiteOpenHelper {
  synchronized void ack(String id){getWritableDatabase().delete("outbox","id=?",new String[]{id});}
  synchronized void acceptSnapshot(JSONObject snapshot,JSONArray feedback,JSONArray sentMatches) throws Exception {
   acceptSnapshot(snapshot,feedback,sentMatches,new JSONArray());
+ }
+
+ synchronized JSONArray routeRecords() throws Exception {return RoutePlan.current(CoachRepository.array(get("route-local"),"records"),pending("route"));}
+ synchronized void saveRouteChanges(JSONArray changes) throws Exception {
+  SQLiteDatabase db=getWritableDatabase();db.beginTransaction();try{
+   JSONArray merged=RoutePlan.current(routeRecords(),changes);put("route-local",new JSONObject().put("records",merged));
+   for(int i=0;i<changes.length();i++){JSONObject c=changes.getJSONObject(i);queue("route:"+c.getString("change_id"),"route",c);}db.setTransactionSuccessful();
+  }finally{db.endTransaction();}
+ }
+ synchronized void importRouteSnapshot(JSONObject snapshot) throws Exception {
+  JSONObject status=get("status");String error="Routes saved on phone; update or check the route planner bridge";
+  if(snapshot.optInt("route_schema_version",0)>=1&&!snapshot.has("route_error")&&snapshot.optJSONArray("route_changes")!=null)try{
+   JSONArray merged=RoutePlan.current(routeRecords(),snapshot.getJSONArray("route_changes"));put("route-local",new JSONObject().put("records",merged));error="";
+  }catch(Exception invalid){error="Routes saved on phone; route data in the training database needs attention";}
+  put("status",status.put("route_error",error));
+ }
+ synchronized void ackRoutes(JSONArray sent,JSONArray accepted,JSONObject snapshot)throws Exception{
+  // Acknowledge only exact records present in the returned validated state. A newer local edit has another ID.
+  JSONArray returned=RoutePlan.current(CoachRepository.array(snapshot,"route_changes"));
+  Set<String> ids=new HashSet<>();for(int i=0;i<accepted.length();i++)ids.add(accepted.getString(i));
+  for(int i=0;i<sent.length();i++){JSONObject c=sent.getJSONObject(i);if(!ids.contains(c.getString("change_id")))continue;JSONObject remote=RoutePlan.find(returned,c.getString("record_id"));
+   if(remote!=null&&RoutePlan.current(new JSONArray().put(c),new JSONArray().put(remote)).getJSONObject(0).getString("change_id").equals(remote.getString("change_id")))ack("route:"+c.getString("change_id"));
+  }
  }
  synchronized JSONArray healthRecords() throws Exception {return HealthRecords.current(CoachRepository.array(get("snapshot"),"health"),CoachRepository.array(get("health-local"),"records"),pending("health"));}
  synchronized void saveHealth(JSONArray changes) throws Exception {
@@ -51,6 +75,7 @@ final class LocalStore extends SQLiteOpenHelper {
    String dietError="Diet quality unavailable; previous assessments retained";
    if(!snapshot.has("diet_quality_error")&&snapshot.optJSONArray("diet_quality")!=null)try{put("diet-quality",new JSONObject().put("records",DietQuality.importLedger(CoachRepository.array(get("diet-quality"),"records"),snapshot.getJSONArray("diet_quality"))));dietError="";}catch(IllegalArgumentException invalid){dietError="Diet quality needs attention in Sheets; previous assessments retained";}
    put("status",status.put("nutrition_error",nutritionError).put("diet_quality_error",dietError));
+   importRouteSnapshot(snapshot);
    put("snapshot",snapshot);put("health-local",new JSONObject().put("records",current));put("workout-local",new JSONObject().put("records",statuses));
    for(int i=0;i<feedback.length();i++)ack(feedback.getString(i));
    for(int i=0;i<healthAck.length();i++)ack("health:"+healthAck.getString(i));

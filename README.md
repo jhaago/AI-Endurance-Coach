@@ -61,3 +61,10 @@ The normal package is `au.com.endurancecoach`, version0.6.0/code12, signed with 
 The Sheets schema is migrated and read back. Existing Apps Script deployment version4 is live at the same URL, and its public0.6.0 response and read-only setup check are verified. Physical phone roundtrip remains to be checked; see [validation status](docs/VALIDATION.md).
 
 Post-run: save the activity on your watch, wait for Garmin Connect availability (Strava may receive its own copy), then open Endurance Coach and add feedback to the imported activity. Saved feedback queues immediately for the central database. Before discussing it in ChatGPT later, Settings → Sync & import details can confirm cloud sync and no pending changes. ChatGPT reads the connected database when asked; there is no automatic coaching conversation triggered by a run.
+
+
+## Session route planner (0.8.0)
+
+Open an upcoming running session → **Workout details → Route planner**. Suggested compares saved/generated or discovered routes against session distance/time, surface, climbing and shape. My routes supports favourites and GPX imports. Create generates from a selected start or snaps drawn/dragged waypoints to mapped pedestrian paths. Review map, elevation and the fit explanation, then attach a pinned copy to the session. There is no activity navigation.
+
+No paid account/API key is configured. Maps and discovery depend on public services with limits. Routes and drafts save offline; cloud route sync requires the additive RoutePlanner schema and updated bridge. Existing Health, activities and plans continue to sync without it. See [route setup and limitations](docs/ROUTE_PLANNER.md). Phone interaction and authenticated route sync need device verification.

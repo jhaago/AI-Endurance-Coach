@@ -203,7 +203,7 @@ public final class MainActivity extends Activity {
         }
         if (syncDetailsPending != null) {
             try {
-                int count = repo.store.pending("feedback").length() + repo.store.pending("health").length() + repo.store.pending("workout_status").length();
+                int count = repo.store.pending("feedback").length() + repo.store.pending("health").length() + repo.store.pending("workout_status").length() + repo.store.pending("route").length();
                 syncDetailsPending.setText(count + " entry change(s) waiting to sync");
                 syncDetailsPending.setVisibility(count == 0 ? View.GONE : View.VISIBLE);
             } catch (Exception ignored) { /* Keep the last known queue count. */ }
@@ -358,6 +358,8 @@ public final class MainActivity extends Activity {
         if (result.completed) c.addView(text(actualMinutes(result), 16, theme.ink, false));
         String intensity = w.optString("intensity", "");
         if (!intensity.isEmpty()) c.addView(text(intensity, 14, theme.muted, false));
+        JSONObject attachedRoute = new RouteStore(this, repo.store).attachment(w.optString("workout_id"));
+        if (attachedRoute != null) c.addView(text("Route · " + attachedRoute.getJSONObject("route").optString("name"), 13, theme.accent, false));
         c.addView(button("Workout details", () -> workoutDetail(w)));
     }
     private String actualMinutes(WorkoutCompletion.Result result) {
@@ -382,6 +384,11 @@ public final class MainActivity extends Activity {
             if (activity != null) {
                 box.addView(text("Matched activity · " + activity.optString("name", "Garmin activity"), 14, theme.muted, false));
                 box.addView(button("View matched activity", () -> { details.dismiss(); activityDetail(activity); }));
+            }
+            JSONObject attachedRoute = new RouteStore(this, repo.store).attachment(workout.optString("workout_id"));
+            if (attachedRoute != null) box.addView(text("Route · " + attachedRoute.getJSONObject("route").optString("name"), 15, theme.accent, true));
+            if (workout.optString("type").equals("run") && !LocalDate.parse(workout.getString("date")).isBefore(today())) {
+                box.addView(button("Route planner", () -> { details.dismiss(); startActivity(new android.content.Intent(this, RoutePlannerActivity.class).putExtra("workout_id", workout.optString("workout_id"))); }));
             }
             box.addView(button("Add feedback", () -> feedback("", workout.optString("workout_id"), details), true));
             if (canRecordCompletion(workout)) {
