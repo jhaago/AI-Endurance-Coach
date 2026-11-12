@@ -30,9 +30,12 @@ jobs:
         run: node --test backend/test/*.test.cjs
       - name: Core tests
         run: ./gradlew :core:test
+      - name: Route planner Android tests
+        run: ./gradlew :app:testDebugUnitTest --tests 'au.com.endurancecoach.RoutePlannerUiTest' --tests 'au.com.endurancecoach.RouteSyncTest'
       - name: Android unit tests
         run: ./gradlew :app:testDebugUnitTest
       - name: Android lint
+        if: ${{ !cancelled() }}
         run: ./gradlew :app:lintDebug
       - name: Build debug APK
         if: ${{ !cancelled() }}
@@ -47,6 +50,7 @@ jobs:
           name: endurance-coach-0.8.0-debug
           path: app/build/outputs/apk/debug/app-debug.apk
   signed-release:
+    needs: verify
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' &&
